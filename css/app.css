@@ -15,6 +15,16 @@
   --orange-clair: #FFF0CC;
   --bleu: #1D4B94;
   --bleu-clair: #E1EAFA;
+  --mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace;
+}
+
+/* Police hébergée sur le site (la même que labo) : aucun service extérieur, fonctionne hors ligne */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('../vendor/fonts/plus-jakarta-sans-latin-var.woff2') format('woff2');
 }
 
 * { box-sizing: border-box; }
@@ -22,7 +32,7 @@ html, body { margin: 0; }
 body {
   background: var(--fond);
   color: var(--texte);
-  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-size: 15px;
   line-height: 1.4;
 }
@@ -31,7 +41,7 @@ a:hover { color: var(--vert-fonce); }
 h1 { margin: 0; font-size: 22px; }
 h2 { margin: 0; font-size: 18px; }
 h3 { margin: 0; font-size: 15px; }
-.num { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .muted { color: var(--gris); }
 .small { font-size: 13px; }
 .r { text-align: right; }
@@ -98,7 +108,7 @@ main.page {
 .card-head { padding: 14px 18px; display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--bord); }
 .kpi { padding: 14px 18px; }
 .kpi .t { font-size: 14px; color: var(--gris); }
-.kpi .v { font-size: 28px; font-weight: 600; margin-top: 4px; font-family: 'IBM Plex Mono', monospace; }
+.kpi .v { font-size: 28px; font-weight: 600; margin-top: 4px; font-family: var(--mono); }
 .kpi .s { font-size: 13px; color: var(--gris); }
 
 /* ---------- Formulaires ---------- */
@@ -145,6 +155,7 @@ textarea.in { padding: 10px 12px; min-height: 80px; }
 .b-out { background: var(--rouge-clair); color: var(--rouge); }
 .b-exp { background: var(--bleu-clair); color: var(--bleu); }
 .b-prog { background: var(--violet-clair); color: var(--violet); }
+.b-neutre { background: #EDF1EF; color: var(--gris); }
 
 .alert { padding: 12px 16px; border-radius: 10px; font-weight: 600; }
 .alert-warn { background: var(--orange-clair); color: var(--orange); }
@@ -191,7 +202,7 @@ table.tbl { width: 100%; border-collapse: collapse; }
 .cart-line { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 18px; border-bottom: 1px solid #EDF1EF; }
 .qb { width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--bord-fort); background: #FFFFFF; font: inherit; font-size: 20px; font-weight: 600; cursor: pointer; }
 .cart-head-prog { background: var(--violet); color: #FFFFFF; border-radius: 14px 14px 0 0; }
-.total { font-size: 32px; font-weight: 600; font-family: 'IBM Plex Mono', monospace; }
+.total { font-size: 32px; font-weight: 600; font-family: var(--mono); }
 details.patient { border: 1px solid var(--bord); border-radius: 10px; padding: 0 14px; }
 details.patient summary { min-height: 48px; display: flex; align-items: center; cursor: pointer; font-weight: 600; }
 
@@ -212,7 +223,7 @@ details.patient summary { min-height: 48px; display: flex; align-items: center; 
 .login { width: 100%; max-width: 440px; background: #FFFFFF; border-radius: 20px; padding: 28px; display: flex; flex-direction: column; gap: 16px; }
 
 /* ---------- Ticket et formulaire officiel ---------- */
-.ticket { width: 280px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #111111; line-height: 1.5; background: #FFFFFF; padding: 12px; margin: 0 auto; }
+.ticket { width: 280px; font-family: var(--mono); font-size: 12px; color: #111111; line-height: 1.5; background: #FFFFFF; padding: 12px; margin: 0 auto; }
 .ticket .ligne { display: flex; justify-content: space-between; gap: 8px; }
 .ticket .sep { border-top: 1px dashed #555555; margin: 6px 0; }
 .ticket .c { text-align: center; }
@@ -220,11 +231,23 @@ details.patient summary { min-height: 48px; display: flex; align-items: center; 
 .ft { width: 100%; border-collapse: collapse; }
 .ft th, .ft td { border: 1px solid #222222; padding: 4px 6px; vertical-align: middle; }
 .ft th { font-weight: 700; font-size: 11px; text-align: center; line-height: 1.2; }
-.ft td.n { text-align: right; font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+.ft td.n { text-align: right; font-family: var(--mono); font-size: 12px; }
 .ft tr.cmd td { background: #FFF8E1; }
 .ft td.rup { color: var(--rouge); font-weight: 700; }
-.ft input { width: 70px; min-height: 28px; border: 1px solid #8FA39B; border-radius: 4px; text-align: right; font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+.ft input { width: 70px; min-height: 28px; border: 1px solid #8FA39B; border-radius: 4px; text-align: right; font-family: var(--mono); font-size: 12px; }
 .calc { color: var(--violet); }
+
+/* ---------- Bandeaux : hors ligne, ventes en attente, nouvelle version ---------- */
+.bandeau { padding: 10px 20px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center; font-weight: 600; text-align: center; }
+.bandeau-off { background: var(--orange-clair); color: var(--orange); }
+.bandeau-maj { background: var(--bleu-clair); color: var(--bleu); }
+.bandeau-err { background: var(--rouge-clair); color: var(--rouge); }
+.version { font-size: 12px; color: #B8D4C8; }
+
+/* Champ mot de passe avec bouton œil */
+.mdp { position: relative; }
+.mdp .in { padding-right: 56px; }
+.mdp button { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); min-width: 44px; min-height: 40px; border: 0; background: transparent; color: var(--gris); cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
 
 #print-root { display: none; }
 @media print {

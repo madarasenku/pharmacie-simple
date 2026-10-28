@@ -14,11 +14,20 @@ export const fmt = (n) => {
   return v.toLocaleString('fr-FR').replace(/[  ]/g, ' ');
 };
 export const fmtF = (n) => fmt(n) + ' F';
-export const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('fr-FR') : '—');
+// Une date seule (« 2027-01-31 ») est lue telle quelle : passée par new Date(), elle serait
+// prise pour minuit UTC et pourrait reculer d'un jour selon le fuseau de l'appareil.
+const DATE_SEULE = /^(\d{4})-(\d{2})-(\d{2})$/;
+export const fmtDate = (d) => {
+  if (!d) return '—';
+  const m = DATE_SEULE.exec(d);
+  return m ? m[3] + '/' + m[2] + '/' + m[1] : new Date(d).toLocaleDateString('fr-FR');
+};
 export const fmtHeure = (d) => new Date(d).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 export const fmtDateHeure = (d) => fmtDate(d) + ' ' + fmtHeure(d);
 export const fmtPeremption = (d) => {
   if (!d) return '—';
+  const m = DATE_SEULE.exec(d);
+  if (m) return m[2] + '/' + m[1];
   const x = new Date(d);
   return String(x.getMonth() + 1).padStart(2, '0') + '/' + x.getFullYear();
 };
@@ -33,7 +42,7 @@ export const nomMois = (iso) => {
   const s = new Date(iso + '-01T00:00:00').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
   return s.charAt(0).toUpperCase() + s.slice(1);
 };
-export const joursAvant = (date) => (date ? Math.floor((new Date(date) - new Date()) / 86400000) : null);
+export const joursAvant = (date) => (date ? Math.floor((debutJour(String(date).slice(0, 10)) - debutJour(isoJour())) / 86400000) : null);
 
 export function trancheAge(age, unite) {
   const n = parseFloat(String(age ?? '').replace(',', '.'));
@@ -55,6 +64,10 @@ export const nombre = (v) => {
   return isNaN(n) ? null : n;
 };
 
+// Mots de passe : même règle que labo
+export const MDP_REGLE = 'Au moins 8 caractères, avec au moins une lettre et un chiffre.';
+export const mdpValide = (m) => String(m).length >= 8 && /[A-Za-z]/.test(m) && /\d/.test(m);
+
 // Appels Supabase : renvoient les données ou lèvent une erreur lisible
 export async function q(promesse) {
   const { data, error } = await promesse;
@@ -65,9 +78,53 @@ export async function rpc(sb, fn, args) {
   return q(sb.rpc(fn, args));
 }
 
+// Lecture par pages : Supabase ne renvoie jamais plus de 1000 lignes par requête.
+// Sans cela, un mois chargé serait tronqué sans le moindre message.
+export async function tout(fabrique, taille = 1000) {
+  const lignes = [];
+  for (let debut = 0; ; debut += taille) {
+    const page = await q(fabrique().range(debut, debut + taille - 1));
+    lignes.push(...page);
+    if (page.length < taille) return lignes;
+  }
+}
+
+// Modification qui doit toucher au moins une ligne. Un refus des règles de sécurité (RLS)
+// ne renvoie PAS d'erreur, seulement zéro ligne : sans ce contrôle, l'écran afficherait
+// « enregistré » alors que rien n'a changé (leçon de labo v13.270).
+export async function qMaj(promesseAvecSelect) {
+  const data = await q(promesseAvecSelect);
+  if (!data || (Array.isArray(data) && !data.length)) {
+    throw new Error('Le serveur a refusé la modification (droits insuffisants ou élément introuvable).');
+  }
+  return data;
+}
+
+export const estErreurReseau = (e) =>
+  !navigator.onLine || /Failed to fetch|NetworkError|Load failed|network|fetch failed/i.test(e?.message || String(e));
+
+export const nouvelId = () => (crypto.randomUUID ? crypto.randomUUID()
+  : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = crypto.getRandomValues(new Uint8Array(1))[0] % 16;
+    return (c === 'x' ? r : (r & 3) | 8).toString(16);
+  }));
+
+// Stockage local de l'appareil (préfixe ph_). Peut être indisponible (navigation privée) : jamais bloquant.
+export const local = {
+  lire(cle, defaut = null) {
+    try { const v = localStorage.getItem('ph_' + cle); return v === null ? defaut : JSON.parse(v); } catch (_) { return defaut; }
+  },
+  ecrire(cle, valeur) {
+    try { localStorage.setItem('ph_' + cle, JSON.stringify(valeur)); return true; } catch (_) { return false; }
+  },
+  effacer(cle) {
+    try { localStorage.removeItem('ph_' + cle); } catch (_) { /* rien */ }
+  }
+};
+
 export function messageErreur(e) {
   const m = e?.message || String(e);
-  if (/Failed to fetch|NetworkError/i.test(m)) return 'Pas de connexion internet. Réessayez.';
+  if (estErreurReseau(e)) return 'Pas de connexion internet. Réessayez.';
   if (/JWT|session/i.test(m)) return 'Session expirée : reconnectez-vous.';
   if (/duplicate key.*code_barres/i.test(m)) return 'Ce code-barres est déjà utilisé par un autre produit.';
   if (/row-level security|42501|non autorisée/i.test(m)) return 'Vous n’avez pas le droit de faire cette action.';
@@ -84,12 +141,14 @@ export function toast(message, type = 'ok') {
   setTimeout(() => el.remove(), type === 'err' ? 7000 : 3500);
 }
 export const erreur = (e) => {
-  console.error(e);
+  // Bug de programmation → console.error (les tests automatiques le détectent) ; refus du serveur ou réseau → simple avertissement
+  if (e instanceof TypeError && !estErreurReseau(e) || e instanceof ReferenceError || e instanceof SyntaxError) console.error(e);
+  else console.warn(e);
   toast(messageErreur(e), 'err');
 };
 
-// Fenêtre modale. contenu = HTML ; renvoie { el, fermer }.
-export function modal(titre, contenu, { large = false } = {}) {
+// Fenêtre modale. contenu = HTML ; renvoie { el, fermer }. auFermer : appelé une fois, quelle que soit la façon de fermer.
+export function modal(titre, contenu, { large = false, auFermer = null } = {}) {
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
   overlay.innerHTML = `
@@ -100,6 +159,7 @@ export function modal(titre, contenu, { large = false } = {}) {
   const fermer = () => {
     overlay.remove();
     document.removeEventListener('keydown', surTouche);
+    if (auFermer) { const f = auFermer; auFermer = null; f(); }
   };
   const surTouche = (e) => { if (e.key === 'Escape') fermer(); };
   overlay.addEventListener('click', (e) => {
@@ -114,10 +174,12 @@ export function modal(titre, contenu, { large = false } = {}) {
 
 export function confirmer(titre, texte, libelle = 'Confirmer') {
   return new Promise((resolve) => {
+    // Fermer avec la croix, Échap ou un clic à côté vaut « non »
     const m = modal(titre, `<p style="margin:0">${esc(texte)}</p>
-      <div class="inline" style="justify-content:flex-end"><button class="btn" data-non>Annuler</button><button class="btn btn-p" data-oui>${esc(libelle)}</button></div>`);
-    m.el.querySelector('[data-non]').onclick = () => { m.fermer(); resolve(false); };
-    m.el.querySelector('[data-oui]').onclick = () => { m.fermer(); resolve(true); };
+      <div class="inline" style="justify-content:flex-end"><button class="btn" data-non>Annuler</button><button class="btn btn-p" data-oui>${esc(libelle)}</button></div>`,
+    { auFermer: () => resolve(false) });
+    m.el.querySelector('[data-non]').onclick = () => m.fermer();
+    m.el.querySelector('[data-oui]').onclick = () => { resolve(true); m.fermer(); };
   });
 }
 
@@ -155,28 +217,45 @@ export function csv(lignes) {
 }
 
 // Charge le catalogue complet : produits, origines rattachées et stock par origine.
-export async function chargerCatalogue(sb) {
-  const [produits, liens, stock, cmm] = await Promise.all([
-    q(sb.from('produits').select('*').order('designation')),
-    q(sb.from('produits_programmes').select('produit_id, programme_id')),
-    q(sb.from('v_stock').select('*')),
-    q(sb.from('v_cmm').select('*'))
-  ]);
+// Une copie est gardée sur l'appareil : hors ligne, le comptoir continue avec la dernière version connue.
+export async function chargerCatalogue(sb, { secours = false } = {}) {
+  let produits, liens, stock, cmm;
+  try {
+    [produits, liens, stock, cmm] = await Promise.all([
+      tout(() => sb.from('produits').select('*').order('designation').order('id')),
+      tout(() => sb.from('produits_programmes').select('produit_id, programme_id').order('produit_id').order('programme_id')),
+      tout(() => sb.from('v_stock').select('*').order('produit_id').order('programme_id')),
+      tout(() => sb.from('v_cmm').select('*').order('produit_id').order('programme_id'))
+    ]);
+  } catch (e) {
+    const copie = local.lire('catalogue');
+    if (secours && copie && estErreurReseau(e)) return Object.assign(copie.produits, { horsLigne: true, date: copie.date });
+    throw e;
+  }
   const parId = new Map();
   for (const p of produits) parId.set(p.id, { ...p, origines: {} });
   for (const l of liens) {
     const p = parId.get(l.produit_id);
-    if (p) p.origines[l.programme_id] = { quantite: 0, perimee: 0, prochaine: null, cmm: 0 };
+    if (p) p.origines[l.programme_id] = { quantite: 0, perimee: 0, prochaine: null, cmm: 0, aEuDuStock: false };
   }
   for (const s of stock) {
     const o = parId.get(s.produit_id)?.origines[s.programme_id];
-    if (o) Object.assign(o, { quantite: s.quantite, perimee: s.quantite_perimee, prochaine: s.prochaine_peremption });
+    if (o) {
+      Object.assign(o, { quantite: s.quantite, perimee: s.quantite_perimee, prochaine: s.prochaine_peremption });
+      // « Rupture » n'a de sens que pour un produit qui a déjà été en stock
+      o.aEuDuStock = s.nb_lots !== undefined ? s.nb_lots > 0 : (s.quantite > 0 || s.quantite_perimee > 0);
+    }
   }
   for (const c of cmm) {
     const o = parId.get(c.produit_id)?.origines[c.programme_id];
-    if (o) o.cmm = Number(c.cmm) || 0;
+    if (o) {
+      o.cmm = Number(c.cmm) || 0;
+      if (o.cmm > 0) o.aEuDuStock = true;
+    }
   }
-  return [...parId.values()];
+  const liste = [...parId.values()];
+  local.ecrire('catalogue', { date: new Date().toISOString(), produits: liste });
+  return liste;
 }
 
 export const normaliser = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();

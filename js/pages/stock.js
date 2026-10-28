@@ -15,7 +15,9 @@ export async function render(el, ctx) {
     const cles = Object.keys(p.origines).map(Number);
     if (!cles.length) return { cle: 'aucun', texte: 'Sans origine', badge: 'b-low' };
     const nom = (id) => { const o = origines.find((x) => x.id === id); return o ? (o.est_vente ? 'Vente' : o.sigle) : '?'; };
-    const ruptures = cles.filter((id) => p.origines[id].quantite <= 0 && (p.origines[id].cmm > 0 || id === vente?.id));
+    // « Rupture » seulement pour un produit qui a déjà été en stock : sinon c'est un produit jamais saisi
+    const ruptures = cles.filter((id) => p.origines[id].quantite <= 0 && p.origines[id].aEuDuStock);
+    const jamais = cles.every((id) => p.origines[id].quantite <= 0 && !p.origines[id].aEuDuStock);
     const bas = cles.filter((id) => p.origines[id].quantite > 0 && p.origines[id].quantite < Math.max(p.stock_min, Math.ceil(p.origines[id].cmm)));
     const perimes = cles.some((id) => p.origines[id].perimee > 0);
     const bientot = cles.some((id) => { const j = joursAvant(p.origines[id].prochaine); return j !== null && j <= 90; });
@@ -23,6 +25,7 @@ export async function render(el, ctx) {
     if (bas.length) return { cle: 'bas', texte: 'Bas · ' + bas.map(nom).join(', '), badge: 'b-low' };
     if (perimes) return { cle: 'perime', texte: 'Lot périmé à retirer', badge: 'b-out' };
     if (bientot) return { cle: 'bientot', texte: 'Périme bientôt', badge: 'b-exp' };
+    if (jamais) return { cle: 'jamais', texte: 'Jamais en stock', badge: 'b-neutre' };
     return { cle: 'ok', texte: 'OK', badge: 'b-ok' };
   }
 
@@ -36,20 +39,22 @@ export async function render(el, ctx) {
     const aCommander = vente ? catalogue.filter((p) => p.actif && p.origines[vente.id]).map((p) => {
       const o = p.origines[vente.id];
       return { p, o, qte: Math.max(0, Math.ceil(2 * o.cmm - o.quantite)) };
-    }).filter((x) => x.qte > 0 || (x.o.quantite < x.p.stock_min)) : [];
+    }).filter((x) => x.o.aEuDuStock && (x.qte > 0 || x.o.quantite < x.p.stock_min)) : [];
     const aDemander = [];
     for (const p of catalogue) for (const o of origines.filter((x) => !x.est_vente)) {
       const s = p.origines[o.id];
-      if (s && (s.quantite < Math.max(p.stock_min, Math.ceil(s.cmm)) || (s.quantite === 0 && s.cmm > 0))) aDemander.push({ p, o, s });
+      if (s && s.aEuDuStock && s.quantite < Math.max(p.stock_min, Math.ceil(s.cmm))) aDemander.push({ p, o, s });
     }
 
     el.innerHTML = `
       <div class="page-head"><div><h1>Mon stock</h1><div class="small muted">Le stock baisse à chaque vente ou distribution et monte à chaque entrée. Cliquez sur un produit pour voir ses lots et son historique.</div></div>
         <div class="inline"><button class="btn" id="export">Exporter Excel</button>${ctx.peut('rapports') ? '<a class="btn" href="#/rapport">Rapport de commande district</a>' : ''}</div></div>
+      ${compte('jamais') && ctx.peut('corriger') ? `<div class="alert alert-prog">${compte('jamais')} produit(s) n’ont encore jamais eu de stock enregistré.
+        S’ils sont déjà sur vos étagères, saisissez-les dans <a href="#/inventaire">Inventaire</a> (stock de départ) ; sinon faites une <a href="#/entree">entrée</a> à leur réception.</div>` : ''}
       <div class="inline">
         <div style="flex:1 1 280px"><label class="sr" for="rech">Chercher</label><input class="in" id="rech" type="search" placeholder="Chercher un produit ou un code-barres" value="${esc(recherche)}"></div>
         <div class="inline" role="group" aria-label="Filtrer">
-          ${[['tout', 'Tout', avecEtat.length], ['bas', 'À commander', compte('bas') + compte('rupture')], ['rupture', 'Rupture', compte('rupture')], ['bientot', 'Périme bientôt', compte('bientot')], ['perime', 'Périmés', compte('perime')]]
+          ${[['tout', 'Tout', avecEtat.length], ['bas', 'À commander', compte('bas') + compte('rupture')], ['rupture', 'Rupture', compte('rupture')], ['bientot', 'Périme bientôt', compte('bientot')], ['perime', 'Périmés', compte('perime')], ['jamais', 'Jamais en stock', compte('jamais')]]
             .map(([k, l, n]) => `<button class="chip ${filtre === k ? 'on' : ''}" data-filtre="${k}">${l} <span class="num">${n}</span></button>`).join('')}
         </div>
       </div>
@@ -90,7 +95,7 @@ export async function render(el, ctx) {
       n.focus();
       n.setSelectionRange(pos, pos);
     };
-    el.querySelectorAll('[data-produit]').forEach((tr) => tr.onclick = () => detail(catalogue.find((p) => p.id === Number(tr.dataset.produit))));
+    el.querySelectorAll('[data-produit]').forEach((tr) => tr.onclick = () => detail(catalogue.find((p) => p.id === Number(tr.dataset.produit))).catch(erreur));
     el.querySelector('#export').onclick = () => {
       const lignes = [['Produit', ...origines.map((o) => o.est_vente ? 'Vente' : o.sigle), 'Total', 'Conso/mois', 'État']];
       for (const { p, e } of liste) {
@@ -119,10 +124,10 @@ export async function render(el, ctx) {
           <td class="num r" style="font-weight:600">${fmt(l.quantite)}</td>
           ${peutCorriger ? `<td><div class="inline" style="flex-wrap:nowrap">
             <label class="sr" for="c-${l.id}">Quantité réelle</label><input class="in num" id="c-${l.id}" style="width:80px" inputmode="numeric" placeholder="réel">
-            <select class="in" data-motif="${l.id}" style="width:150px" aria-label="Motif">${perime ? '<option>Périmé jeté</option>' : ''}<option>Erreur de comptage</option><option>Casse / perte</option><option>Périmé jeté</option></select>
+            <select class="in" data-motif="${l.id}" style="width:150px" aria-label="Motif">${(perime ? ['Périmé jeté', 'Erreur de comptage', 'Casse / perte'] : ['Erreur de comptage', 'Casse / perte', 'Périmé jeté']).map((x) => `<option>${x}</option>`).join('')}</select>
             <button class="btn btn-sm" data-corriger="${l.id}">OK</button></div></td>` : ''}</tr>`;
         }).join('') || '<tr><td colspan="5" class="muted">Aucun lot.</td></tr>'}</tbody></table></div>
-      ${peutCorriger ? '' : '<div class="small muted">Seul le gérant (ou un vendeur autorisé) peut corriger le stock.</div>'}
+      ${peutCorriger ? '<div class="small muted">Pour recompter tout le stock d’un coup, utilisez la page <a href="#/inventaire">Inventaire</a>.</div>' : '<div class="small muted">Seul le gérant (ou une personne autorisée) peut corriger le stock.</div>'}
       <h3>Historique</h3>
       <div class="table-box"><table class="tbl"><thead><tr><th>Date</th><th>Type</th><th>Origine</th><th>Référence</th><th class="r">Qté</th><th>Par</th></tr></thead>
         <tbody>${mvts.map((x) => `<tr><td class="num small">${fmtDateHeure(x.created_at)}</td><td>${esc(TYPES[x.type])}</td><td>${esc(nom(x.programme_id))}</td>
@@ -139,7 +144,7 @@ export async function render(el, ctx) {
         m.fermer();
         catalogue = await chargerCatalogue(sb);
         dessiner();
-        detail(catalogue.find((x) => x.id === p.id));
+        detail(catalogue.find((x) => x.id === p.id)).catch(erreur);
       } catch (e) { erreur(e); }
     });
   }

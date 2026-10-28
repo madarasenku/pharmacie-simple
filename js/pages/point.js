@@ -1,5 +1,5 @@
 // Point général : ventes, programmes et stock sur une période.
-import { esc, fmt, q, isoJour, chargerCatalogue, joursAvant } from '../util.js';
+import { esc, fmt, tout, isoJour, chargerCatalogue, joursAvant } from '../util.js';
 
 export async function render(el, ctx) {
   const { sb } = ctx;
@@ -16,9 +16,9 @@ export async function render(el, ctx) {
   async function dessiner() {
     const [debut, fin, libelle] = bornes();
     const [ventes, entrees, catalogue] = await Promise.all([
-      q(sb.from('ventes').select('id, programme_id, mode_paiement, total, patient_tranche, ventes_lignes(quantite, prix_unitaire, cout_unitaire)')
-        .eq('annulee', false).gte('created_at', debut.toISOString()).lt('created_at', fin.toISOString()).limit(10000)),
-      q(sb.from('mouvements').select('quantite, prix_unitaire, programme_id').eq('type', 'entree').gte('created_at', debut.toISOString()).lt('created_at', fin.toISOString()).limit(10000)),
+      tout(() => sb.from('ventes').select('id, programme_id, mode_paiement, total, patient_tranche, ventes_lignes(quantite, prix_unitaire, cout_unitaire)')
+        .eq('annulee', false).gte('created_at', debut.toISOString()).lt('created_at', fin.toISOString()).order('id')),
+      tout(() => sb.from('mouvements').select('id, quantite, prix_unitaire, programme_id').eq('type', 'entree').gte('created_at', debut.toISOString()).lt('created_at', fin.toISOString()).order('id')),
       chargerCatalogue(sb)
     ]);
     const vv = ventes.filter((v) => v.mode_paiement !== 'gratuit');

@@ -1,5 +1,5 @@
 // Base : programmes et produits (prix, code-barres, rattachement aux programmes).
-import { esc, fmt, q, erreur, toast, modal, correspond, entier, nombre, csv, telecharger } from '../util.js';
+import { esc, fmt, q, qMaj, tout, erreur, toast, modal, correspond, entier, nombre, csv, telecharger } from '../util.js';
 
 export async function render(el, ctx) {
   const { sb } = ctx;
@@ -11,8 +11,8 @@ export async function render(el, ctx) {
   async function charger() {
     await ctx.rechargerContexte();
     const [p, l] = await Promise.all([
-      q(sb.from('produits').select('*').order('designation')),
-      q(sb.from('produits_programmes').select('produit_id, programme_id'))
+      tout(() => sb.from('produits').select('*').order('designation').order('id')),
+      tout(() => sb.from('produits_programmes').select('produit_id, programme_id').order('produit_id').order('programme_id'))
     ]);
     produits = p;
     liens = new Set(l.map((x) => x.produit_id + ':' + x.programme_id));
@@ -84,7 +84,7 @@ export async function render(el, ctx) {
       const v = champ === 'stock_min' ? entier(i.value) : nombre(i.value);
       if (v === null || v < 0) { toast('Valeur invalide.', 'warn'); return; }
       try {
-        await q(sb.from('produits').update({ [champ]: v }).eq('id', id));
+        await qMaj(sb.from('produits').update({ [champ]: v }).eq('id', id).select('id'));
         const p = produits.find((x) => x.id === id);
         p[champ] = v;
         i.style.background = champ === 'prix_vente' && !v ? '#FFF0CC' : '#E0F1E8';
@@ -98,7 +98,7 @@ export async function render(el, ctx) {
           await q(sb.from('produits_programmes').insert({ produit_id, programme_id }));
           liens.add(c.dataset.lien);
         } else {
-          await q(sb.from('produits_programmes').delete().eq('produit_id', produit_id).eq('programme_id', programme_id));
+          await qMaj(sb.from('produits_programmes').delete().eq('produit_id', produit_id).eq('programme_id', programme_id).select('produit_id'));
           liens.delete(c.dataset.lien);
         }
       } catch (e) { c.checked = !c.checked; erreur(e); }
@@ -134,7 +134,7 @@ export async function render(el, ctx) {
       const actif = m.el.querySelector('#g-actif');
       if (actif) ligne.actif = actif.checked;
       try {
-        if (g) await q(sb.from('programmes').update(ligne).eq('id', g.id));
+        if (g) await qMaj(sb.from('programmes').update(ligne).eq('id', g.id).select('id'));
         else await q(sb.from('programmes').insert({ ...ligne, code: sigle + '-' + Date.now().toString(36), ordre: 100 }));
         m.fermer();
         toast('Programme enregistré.');
@@ -171,7 +171,7 @@ export async function render(el, ctx) {
       const actif = m.el.querySelector('#p-actif');
       if (actif) ligne.actif = actif.checked;
       try {
-        if (p) await q(sb.from('produits').update(ligne).eq('id', p.id));
+        if (p) await qMaj(sb.from('produits').update(ligne).eq('id', p.id).select('id'));
         else {
           const n = await q(sb.from('produits').insert(ligne).select().single());
           const progs = [...m.el.querySelectorAll('[data-np]')].filter((c) => c.checked).map((c) => ({ produit_id: n.id, programme_id: Number(c.dataset.np) }));

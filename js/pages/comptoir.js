@@ -1,8 +1,9 @@
 // Comptoir : vendre (stock Vente) ou distribuer gratuitement (stock d'un programme).
 import {
   esc, fmt, fmtF, fmtPeremption, q, rpc, erreur, toast, modal, imprimer, chargerCatalogue,
-  correspond, trancheAge, TRANCHES, entier, fmtDateHeure
+  correspond, trancheAge, TRANCHES, entier, fmtDateHeure, local, estErreurReseau, nouvelId, fmtDate
 } from '../util.js';
+import { mettreEnFile } from '../hors-ligne.js';
 
 const etatVide = () => ({
   panier: new Map(),
@@ -26,13 +27,32 @@ export async function render(el, ctx) {
   let catalogue = [];
   let caisse = null;
   let clients = [];
+  let horsLigne = false;
 
   async function charger() {
-    [catalogue, caisse, clients] = await Promise.all([
-      chargerCatalogue(sb),
-      q(sb.from('caisses').select('id').is('fermee_le', null).maybeSingle()),
-      ctx.peut('credit') ? q(sb.from('v_dettes').select('*').order('nom')) : Promise.resolve([])
-    ]);
+    catalogue = await chargerCatalogue(sb, { secours: true });
+    horsLigne = !!catalogue.horsLigne;
+    if (horsLigne) {
+      // Dernier état connu sur cet appareil
+      caisse = local.lire('caisse');
+      clients = local.lire('clients', []);
+      return;
+    }
+    try {
+      [caisse, clients] = await Promise.all([
+        q(sb.from('caisses').select('id').is('fermee_le', null).maybeSingle()),
+        ctx.peut('credit') ? q(sb.from('v_dettes').select('*').order('nom')) : Promise.resolve([])
+      ]);
+    } catch (e) {
+      // Coupure au milieu du chargement : on continue avec le dernier état connu
+      if (!estErreurReseau(e)) throw e;
+      horsLigne = true;
+      caisse = local.lire('caisse');
+      clients = local.lire('clients', []);
+      return;
+    }
+    local.ecrire('caisse', caisse);
+    local.ecrire('clients', clients);
   }
 
   const prog = () => ctx.programmes.find((p) => p.id === etat.origine);
@@ -119,6 +139,7 @@ export async function render(el, ctx) {
     const sug = suggestion();
 
     el.innerHTML = `
+      <h1 class="sr">Comptoir</h1>
       <div class="stack">
         <div class="inline"><strong style="margin-right:6px">Ce patient est servi en :</strong>
           <div class="origines" role="group" aria-label="Origine des médicaments">
@@ -127,7 +148,8 @@ export async function render(el, ctx) {
               <span class="small" style="opacity:.85">${esc(o.est_vente ? 'Payant' : o.nom + ' · gratuit')}</span></button>`).join('')}
           </div>
         </div>
-        ${estVente && !caisse ? `
+        ${horsLigne ? `<div class="alert alert-warn" role="status">Hors ligne : stock tel qu’il était le ${esc(fmtDate(catalogue.date))} à ${esc(new Date(catalogue.date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }))}. Les ventes sont gardées sur l’appareil et envoyées au retour d’internet.</div>` : ''}
+        ${estVente && !caisse && !horsLigne ? `
           <div class="card card-pad inline" style="background:var(--orange-clair);border-color:#F0D58A">
             <strong style="color:var(--orange)">La caisse est fermée.</strong>
             <label class="sr" for="fond">Fond de caisse</label>
@@ -364,7 +386,10 @@ export async function render(el, ctx) {
     bouton.disabled = true;
     const tr = trancheAge(etat.patient.age, etat.patient.unite);
     const lignesPanier = [...etat.panier].map(([id, n]) => ({ p: prodPar(id), n }));
+    // Identifiant fixé une fois pour cette vente : un nouvel essai (coupure, double clic) ne crée pas de doublon
+    if (!etat.ref) etat.ref = nouvelId();
     const charge = {
+      ref_client: etat.ref,
       programme_id: pr.id,
       mode: pr.est_vente ? etat.mode : 'gratuit',
       client_id: etat.mode === 'credit' ? etat.client : null,
@@ -376,21 +401,50 @@ export async function render(el, ctx) {
       },
       lignes: lignesPanier.map(({ p, n }) => ({ produit_id: p.id, quantite: n }))
     };
-    try {
-      const res = await rpc(sb, 'enregistrer_vente', { p: charge });
-      const clientNom = clients.find((c) => String(c.client_id) === String(etat.client))?.nom;
-      const ticket = ticketHtml(ctx, { ...res, programme: pr, mode: charge.mode, recu: charge.montant_recu, lignes: lignesPanier, patient: charge.patient, client: clientNom, date: new Date() });
-      etat = { ...etatVide(), origine: etat.origine, recherche: '' };
-      await charger();
-      dessiner();
-      const m = modal(pr.est_vente ? 'Vente enregistrée' : 'Distribution enregistrée', `
-        <div class="alert ${pr.est_vente ? 'alert-ok' : 'alert-prog'}">${esc(res.numero)} · ${pr.est_vente ? fmtF(res.total) : 'gratuit'}</div>
+    const clientNom = clients.find((c) => String(c.client_id) === String(etat.client))?.nom;
+    const afficherTicket = (res, provisoire) => {
+      const ticket = ticketHtml(ctx, { ...res, programme: pr, mode: charge.mode, recu: charge.montant_recu, lignes: lignesPanier, patient: charge.patient, client: clientNom, date: new Date(), provisoire });
+      const m = modal(provisoire ? 'Vente gardée hors ligne' : pr.est_vente ? 'Vente enregistrée' : 'Distribution enregistrée', `
+        ${provisoire
+          ? '<div class="alert alert-warn">Pas d’internet : la vente est gardée sur cet appareil et sera envoyée automatiquement dès le retour du réseau.</div>'
+          : `<div class="alert ${pr.est_vente ? 'alert-ok' : 'alert-prog'}">${esc(res.numero)} · ${pr.est_vente ? fmtF(res.total) : 'gratuit'}</div>`}
         <div style="border:1px solid var(--bord);border-radius:10px;padding:8px">${ticket}</div>
         <div class="inline" style="justify-content:flex-end"><button class="btn" data-fermer>Nouvelle vente</button><button class="btn btn-p" id="imp">Imprimer le ${pr.est_vente ? 'reçu' : 'ticket'}</button></div>`);
       m.el.querySelector('#imp').onclick = () => imprimer(ticket);
+    };
+    try {
+      // Écran ouvert hors ligne mais réseau revenu : on tente l'envoi direct (le serveur revérifie le stock)
+      if (!navigator.onLine) throw new TypeError('Failed to fetch');
+      const res = await rpc(sb, 'enregistrer_vente', { p: charge });
+      etat = { ...etatVide(), origine: etat.origine, recherche: '' };
+      await charger();
+      dessiner();
+      afficherTicket(res, false);
     } catch (e) {
-      bouton.disabled = false;
-      erreur(e);
+      if (!estErreurReseau(e)) {
+        bouton.disabled = false;
+        return erreur(e);
+      }
+      // Sans internet : la vente part dans la file de l'appareil, le stock affiché est diminué d'autant
+      try {
+        const totalLocal = total();
+        mettreEnFile(charge, {
+          numero: 'HL-' + charge.ref_client.slice(0, 8).toUpperCase(),
+          origine: pr.est_vente ? 'Vente' : pr.sigle,
+          total: totalLocal,
+          articles: lignesPanier.map(({ p, n }) => p.designation + ' × ' + n).join(', '),
+          patient: charge.patient.nom || ''
+        }, ctx.profil.id);
+        for (const { p, n } of lignesPanier) if (p.origines[pr.id]) p.origines[pr.id].quantite -= n;
+        local.ecrire('catalogue', { date: catalogue.date || new Date().toISOString(), produits: catalogue });
+        etat = { ...etatVide(), origine: etat.origine, recherche: '' };
+        dessiner();
+        ctx.majBandeaux();
+        afficherTicket({ numero: 'HL-' + charge.ref_client.slice(0, 8).toUpperCase(), total: totalLocal }, true);
+      } catch (e2) {
+        bouton.disabled = false;
+        erreur(e2);
+      }
     }
   }
 
@@ -412,6 +466,7 @@ export function ticketHtml(ctx, v) {
     ${ph.adresse || ph.telephone ? `<div class="c">${esc([ph.adresse, ph.telephone].filter(Boolean).join(' · '))}</div>` : ''}
     ${estVente ? '' : `<div class="c" style="font-weight:700">PROGRAMME ${esc(v.programme.nom.toUpperCase())} (${esc(v.programme.sigle)})</div><div class="c">Médicaments GRATUITS · ne pas payer</div>`}
     <div class="sep"></div>
+    ${v.provisoire ? '<div class="c" style="font-weight:700">TICKET PROVISOIRE (hors ligne)</div>' : ''}
     <div class="ligne"><span>${estVente ? 'Reçu' : 'Ticket'} N°</span><span>${esc(v.numero)}</span></div>
     <div class="ligne"><span>Date</span><span>${esc(fmtDateHeure(v.date))}</span></div>
     ${patient ? `<div class="ligne"><span>Patient</span><span>${esc(patient)}</span></div>` : ''}

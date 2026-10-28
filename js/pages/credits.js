@@ -1,5 +1,5 @@
 // Crédits : qui doit combien, historique et remboursements.
-import { esc, fmt, fmtF, fmtDate, q, rpc, erreur, toast, modal, entier, nombre } from '../util.js';
+import { esc, fmt, fmtF, fmtDate, q, qMaj, rpc, erreur, toast, modal, entier, nombre } from '../util.js';
 
 export async function render(el, ctx) {
   const { sb } = ctx;
@@ -89,7 +89,7 @@ export async function render(el, ctx) {
       const ligne = { nom: m.el.querySelector('#f-nom').value.trim(), telephone: m.el.querySelector('#f-tel').value.trim() || null, plafond: entier(m.el.querySelector('#f-pl').value) ?? 10000 };
       if (!ligne.nom) return toast('Le nom est obligatoire.', 'warn');
       try {
-        if (c) await q(sb.from('clients').update(ligne).eq('id', c.client_id));
+        if (c) await qMaj(sb.from('clients').update(ligne).eq('id', c.client_id).select('id'));
         else choisi = (await q(sb.from('clients').insert(ligne).select().single())).id;
         m.fermer();
         voirTous = voirTous || !c;
