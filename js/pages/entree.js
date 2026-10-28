@@ -6,6 +6,7 @@ export async function render(el, ctx) {
   let catalogue = [];
   let choisi = null;
   let codeInconnu = '';
+  let creation = false;
   let recherche = '';
   let entrees = [];
 
@@ -37,11 +38,16 @@ export async function render(el, ctx) {
       <div class="row">
         <section class="col-main">
           <div class="card card-pad stack">
-            <div><label class="lbl" for="code">1. Scanner le code-barres ou chercher le produit</label>
-              <input class="in scan num" id="code" autocomplete="off" placeholder="Scannez ou tapez, puis Entrée" value="${esc(recherche)}"></div>
+            <div class="inline" style="justify-content:space-between;align-items:flex-end">
+              <label class="lbl" for="code" style="margin:0">1. Tapez le nom du médicament ou scannez son code-barres</label>
+              ${!creation && ctx.peut('entree') ? '<button class="btn btn-sm" id="nouveau-med">+ Nouveau médicament</button>' : ''}</div>
+            <input class="in scan" id="code" autocomplete="off" placeholder="Ex. : paracétamol, ou scannez la boîte" value="${esc(recherche)}">
             ${resultats.length ? `<div class="stack" style="gap:6px">${resultats.map((p) => `<button class="btn" style="justify-content:space-between;text-align:left" data-choix="${p.id}">
               <span>${esc(p.designation)}</span><span class="small muted">${p.code_barres ? esc(p.code_barres) : ''}</span></button>`).join('')}</div>` : ''}
-            ${codeInconnu ? formulaireNouveau() : ''}
+            ${recherche.trim() && !resultats.length && !choisi && !creation ? `<div class="alert alert-warn" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between">
+              <span>Aucun médicament ne correspond à « ${esc(recherche.trim())} ».</span>
+              ${ctx.peut('entree') ? '<button class="btn btn-sm btn-p" id="creer-depuis-recherche">Créer ce médicament</button>' : ''}</div>` : ''}
+            ${creation ? formulaireNouveau() : ''}
             ${choisi ? `
               <div class="alert alert-ok" style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-weight:400">
                 <div><strong style="color:var(--vert-fonce);font-size:16px">${esc(choisi.designation)}</strong><br>
@@ -94,10 +100,12 @@ export async function render(el, ctx) {
   const codeScanne = (t) => /^\d{6,}$/.test(String(t).trim());
 
   function formulaireNouveau() {
+    const nomPropose = codeScanne(recherche) ? '' : recherche.trim().toUpperCase();
     return `<div class="stack" style="padding:16px;border-radius:12px;background:#FFF6DE;border:1px solid #F0D58A">
-      <div><strong style="color:var(--orange)">Code inconnu : ${esc(codeInconnu)}</strong>
-      <div class="small">Créez ce produit une seule fois. Au prochain scan, il sera reconnu (ici et au comptoir).</div></div>
-      <div><label class="lbl" for="n-nom">Désignation</label><input class="in" id="n-nom" placeholder="Ex. : CIPROFLOXACINE 500 MG CP"></div>
+      <div><strong style="color:var(--orange)">${codeInconnu ? 'Code-barres inconnu : ' + esc(codeInconnu) : 'Nouveau médicament'}</strong>
+      <div class="small">Créez ce médicament une seule fois : il sera ensuite proposé ici et au comptoir.</div></div>
+      <div><label class="lbl" for="n-nom">Désignation</label><input class="in" id="n-nom" placeholder="Ex. : CIPROFLOXACINE 500 MG CP" value="${esc(nomPropose)}"></div>
+      <div><label class="lbl" for="n-code">Code-barres (facultatif)</label><input class="in num" id="n-code" placeholder="Laisser vide si la boîte n'en a pas" value="${esc(codeInconnu)}"></div>
       <div class="grid-2">
         <div><label class="lbl" for="n-pres">Présentation</label><input class="in" id="n-pres" placeholder="Boîte, plaquette, flacon…"></div>
         <div><label class="lbl" for="n-min">Stock minimum (alerte)</label><input class="in num" id="n-min" inputmode="numeric" value="0"></div>
@@ -112,6 +120,7 @@ export async function render(el, ctx) {
   function choisir(p) {
     choisi = p;
     codeInconnu = '';
+    creation = false;
     dessiner();
     el.querySelector('#qte')?.focus();
   }
@@ -122,6 +131,7 @@ export async function render(el, ctx) {
       recherche = code.value;
       choisi = null;
       codeInconnu = '';
+      creation = false;
       const pos = code.selectionStart;
       dessiner();
       const c = el.querySelector('#code');
@@ -140,6 +150,7 @@ export async function render(el, ctx) {
       if (codeScanne(t) && !res.length) {
         if (!ctx.peut('entree')) return toast('Code inconnu.', 'warn');
         codeInconnu = t;
+        creation = true;
         dessiner();
         el.querySelector('#n-nom')?.focus();
       }
@@ -148,7 +159,12 @@ export async function render(el, ctx) {
     const ch = el.querySelector('#changer');
     if (ch) ch.onclick = () => { choisi = null; recherche = ''; dessiner(); el.querySelector('#code').focus(); };
     const an = el.querySelector('#annuler-nouveau');
-    if (an) an.onclick = () => { codeInconnu = ''; dessiner(); };
+    if (an) an.onclick = () => { codeInconnu = ''; creation = false; dessiner(); };
+    const ouvrirCreation = () => { creation = true; choisi = null; dessiner(); el.querySelector('#n-nom')?.focus(); };
+    const nm = el.querySelector('#nouveau-med');
+    if (nm) nm.onclick = () => { codeInconnu = ''; ouvrirCreation(); };
+    const cr2 = el.querySelector('#creer-depuis-recherche');
+    if (cr2) cr2.onclick = ouvrirCreation;
 
     const lc = el.querySelector('#lier-code');
     if (lc) lc.onclick = async () => {
@@ -169,14 +185,14 @@ export async function render(el, ctx) {
       cr.disabled = true;
       try {
         const p = await q(sb.from('produits').insert({
-          designation: nom.toUpperCase(), code_barres: codeInconnu,
+          designation: nom.toUpperCase(), code_barres: el.querySelector('#n-code').value.trim() || null,
           presentation: el.querySelector('#n-pres').value.trim() || null,
           stock_min: entier(el.querySelector('#n-min').value) || 0
         }).select().single());
         await q(sb.from('produits_programmes').insert(progs.map((id) => ({ produit_id: p.id, programme_id: id }))));
-        toast('Produit créé.');
+        toast('Médicament créé.');
         await charger();
-        recherche = codeInconnu;
+        recherche = p.designation;
         choisir(catalogue.find((x) => x.id === p.id));
       } catch (e) { cr.disabled = false; erreur(e); }
     };

@@ -1,5 +1,9 @@
 // Petites fonctions partagées par toutes les pages.
 
+export const ROLES = { gerant: 'Gérant', responsable: 'Responsable', vendeur: 'Vendeur' };
+// Les comptes créés par le gérant n'ont pas d'e-mail : l'identifiant devient « identifiant@pharmacie.local ».
+export const DOMAINE_IDENTIFIANTS = 'pharmacie.local';
+
 export const TRANCHES = ['< 1 an', '1 – 4 ans', '5 – 14 ans', '15 – 49 ans', '50 ans et +'];
 
 const ENTITES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };

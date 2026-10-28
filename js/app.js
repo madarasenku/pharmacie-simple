@@ -1,6 +1,6 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
-import { esc, q, erreur, toast, messageErreur } from './util.js';
+import { esc, q, erreur, toast, messageErreur, modal, ROLES, DOMAINE_IDENTIFIANTS } from './util.js';
 
 import * as comptoir from './pages/comptoir.js';
 import * as entree from './pages/entree.js';
@@ -34,6 +34,7 @@ const ctx = {
   sb,
   profil: null,
   droits: {},
+  droitsParRole: {},
   pharmacie: {},
   programmes: [],
   get vente() { return this.programmes.find((p) => p.est_vente); },
@@ -41,14 +42,17 @@ const ctx = {
     if (!this.profil) return false;
     if (this.profil.role === 'gerant') return true;
     if (droit === 'gerant') return false;
-    return !!this.droits[droit];
+    return !!this.droitsParRole[this.profil.role]?.[droit];
   },
   async rechargerContexte() {
     const [params, progs] = await Promise.all([
       q(sb.from('parametres').select('*')),
       q(sb.from('programmes').select('*').order('ordre').order('nom'))
     ]);
-    this.droits = params.find((p) => p.cle === 'droits_vendeur')?.valeur || {};
+    this.droitsParRole = {
+      responsable: params.find((p) => p.cle === 'droits_responsable')?.valeur || {},
+      vendeur: params.find((p) => p.cle === 'droits_vendeur')?.valeur || {}
+    };
     this.pharmacie = params.find((p) => p.cle === 'pharmacie')?.valeur || {};
     this.programmes = progs;
   },
@@ -63,58 +67,56 @@ const pageAutorisee = (p) => {
 
 // ---------- Connexion ----------
 
+// L'identifiant devient une adresse interne ; une vraie adresse e-mail reste acceptée (compte du gérant).
+const versEmail = (identifiant) => {
+  const t = identifiant.trim().toLowerCase();
+  return t.includes('@') ? t : t + '@' + DOMAINE_IDENTIFIANTS;
+};
+
 function afficherConnexion(message = '') {
-  let mode = 'connexion';
+  let oubli = false;
   const dessiner = () => {
     app.innerHTML = `
       <div class="login-wrap">
         <form class="login" novalidate>
           <div class="brand"><div class="logo" aria-hidden="true">+</div>
             <div><div style="font-weight:700;font-size:18px">Pharmacie Simple</div>
-            <div class="small muted">${mode === 'connexion' ? 'Connexion' : mode === 'inscription' ? 'Créer un compte' : 'Mot de passe oublié'}</div></div>
+            <div class="small muted">${oubli ? 'Mot de passe oublié' : 'Connexion'}</div></div>
           </div>
           ${message ? `<div class="alert alert-warn">${esc(message)}</div>` : ''}
-          ${mode === 'inscription' ? `<div><label class="lbl" for="nom">Votre nom</label><input class="in" id="nom" autocomplete="name" required></div>` : ''}
-          <div><label class="lbl" for="email">Adresse e-mail</label><input class="in" id="email" type="email" autocomplete="email" required></div>
-          ${mode !== 'oubli' ? `<div><label class="lbl" for="mdp">Mot de passe</label><input class="in" id="mdp" type="password" autocomplete="${mode === 'connexion' ? 'current-password' : 'new-password'}" minlength="6" required></div>` : ''}
-          <button class="btn btn-p btn-big" type="submit">${mode === 'connexion' ? 'Se connecter' : mode === 'inscription' ? 'Créer le compte' : 'Recevoir le lien'}</button>
-          <div class="inline" style="justify-content:space-between">
-            ${mode === 'connexion'
-              ? '<button type="button" class="link" data-mode="inscription">Créer un compte</button><button type="button" class="link" data-mode="oubli">Mot de passe oublié ?</button>'
-              : '<button type="button" class="link" data-mode="connexion">Retour à la connexion</button>'}
-          </div>
-          ${mode === 'inscription' ? '<div class="small muted">Le premier compte créé devient gérant. Les suivants sont vendeurs : le gérant règle leurs droits dans Réglages.</div>' : ''}
+          ${oubli ? `
+            <p style="margin:0">Demandez au <strong>gérant</strong> de vous donner un nouveau mot de passe (Réglages → Utilisateurs).</p>
+            <p class="small muted" style="margin:0">Le gérant qui se connecte avec une adresse e-mail peut recevoir un lien de réinitialisation :</p>
+            <div><label class="lbl" for="email">Adresse e-mail du gérant</label><input class="in" id="email" type="email" autocomplete="email"></div>
+            <button class="btn btn-p" type="submit">Recevoir le lien</button>` : `
+            <div><label class="lbl" for="identifiant">Identifiant</label><input class="in" id="identifiant" autocomplete="username" autocapitalize="none" spellcheck="false" required></div>
+            <div><label class="lbl" for="mdp">Mot de passe</label><input class="in" id="mdp" type="password" autocomplete="current-password" required></div>
+            <button class="btn btn-p btn-big" type="submit">Se connecter</button>`}
+          <button type="button" class="link" id="bascule" style="align-self:flex-start">${oubli ? 'Retour à la connexion' : 'Mot de passe oublié ?'}</button>
         </form>
       </div>`;
-    app.querySelectorAll('[data-mode]').forEach((b) => b.onclick = () => { mode = b.dataset.mode; message = ''; dessiner(); });
+    app.querySelector('#bascule').onclick = () => { oubli = !oubli; message = ''; dessiner(); };
     app.querySelector('form').onsubmit = async (e) => {
       e.preventDefault();
-      const email = app.querySelector('#email').value.trim();
-      const mdp = app.querySelector('#mdp')?.value || '';
       const bouton = app.querySelector('button[type=submit]');
       bouton.disabled = true;
       try {
-        if (mode === 'connexion') {
-          const { error } = await sb.auth.signInWithPassword({ email, password: mdp });
+        if (!oubli) {
+          const identifiant = app.querySelector('#identifiant').value;
+          if (!identifiant.trim()) throw new Error('Saisissez votre identifiant.');
+          const { error } = await sb.auth.signInWithPassword({ email: versEmail(identifiant), password: app.querySelector('#mdp').value });
           if (error) throw error;
-        } else if (mode === 'inscription') {
-          const nom = app.querySelector('#nom').value.trim();
-          const { data, error } = await sb.auth.signUp({ email, password: mdp, options: { data: { nom }, emailRedirectTo: location.origin + location.pathname } });
-          if (error) throw error;
-          if (!data.session) {
-            mode = 'connexion';
-            message = 'Compte créé. Ouvrez l’e-mail de confirmation, puis connectez-vous.';
-            dessiner();
-          }
         } else {
+          const email = app.querySelector('#email').value.trim();
+          if (!email.includes('@') || email.endsWith('@' + DOMAINE_IDENTIFIANTS)) throw new Error('Saisissez une vraie adresse e-mail, ou demandez au gérant.');
           const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
           if (error) throw error;
-          mode = 'connexion';
+          oubli = false;
           message = 'Si ce compte existe, un e-mail de réinitialisation vient d’être envoyé.';
           dessiner();
         }
       } catch (err) {
-        message = /Invalid login/i.test(err.message) ? 'E-mail ou mot de passe incorrect.' : messageErreur(err);
+        message = /Invalid login/i.test(err.message) ? 'Identifiant ou mot de passe incorrect.' : messageErreur(err);
         dessiner();
       }
     };
@@ -152,7 +154,8 @@ function dessinerCadre() {
         <div class="brand-sous" id="sous-titre">${esc(new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}</div></div>
       </div>
       <div class="user-box">
-        <span>${esc(ctx.profil.nom || ctx.profil.email)} · ${ctx.profil.role === 'gerant' ? 'Gérant' : 'Vendeur'}</span>
+        <span>${esc(ctx.profil.nom || ctx.profil.identifiant || ctx.profil.email)} · ${esc(ROLES[ctx.profil.role] || ctx.profil.role)}</span>
+        <button type="button" id="mon-mdp">Mon mot de passe</button>
         <button type="button" id="deconnexion">Se déconnecter</button>
       </div>
     </header>
@@ -161,6 +164,21 @@ function dessinerCadre() {
     </nav>
     <main class="page" id="contenu"></main>`;
   app.querySelector('#deconnexion').onclick = () => sb.auth.signOut();
+  app.querySelector('#mon-mdp').onclick = () => {
+    const m = modal('Changer mon mot de passe', `
+      <div><label class="lbl" for="n1">Nouveau mot de passe (6 caractères minimum)</label><input class="in" id="n1" type="password" autocomplete="new-password"></div>
+      <div><label class="lbl" for="n2">Confirmer</label><input class="in" id="n2" type="password" autocomplete="new-password"></div>
+      <button class="btn btn-p" id="ok">Enregistrer</button>`);
+    m.el.querySelector('#ok').onclick = async () => {
+      const a = m.el.querySelector('#n1').value;
+      if (a.length < 6) return toast('6 caractères minimum.', 'warn');
+      if (a !== m.el.querySelector('#n2').value) return toast('Les deux mots de passe sont différents.', 'warn');
+      const { error } = await sb.auth.updateUser({ password: a });
+      if (error) return erreur(error);
+      m.fermer();
+      toast('Mot de passe modifié.');
+    };
+  };
 }
 
 async function majCaisse() {

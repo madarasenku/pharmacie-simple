@@ -12,7 +12,7 @@ et rapports (dont le formulaire « Rapports produits commandes recouvrables » d
 | Onglet | Rôle |
 |---|---|
 | Comptoir | Vendre (stock Vente) ou distribuer gratuitement (stock d'un programme). Scan du code-barres, lot qui périme en premier, patient facultatif (nom, âge, tranche d'âge, sexe), suggestion de la Gratuité, paiement espèces / Mobile Money / crédit, reçu ou ticket imprimable. |
-| Entrée de stock | Réception d'un achat ou d'une dotation de programme : lot, péremption, prix. Un code-barres inconnu permet de créer le produit. |
+| Entrée de stock | Réception d'un achat ou d'une dotation de programme : lot, péremption, prix. On cherche le médicament par son nom ou on scanne la boîte ; un médicament absent se crée à la main, avec ou sans code-barres. |
 | Mon stock | Stock par origine (Vente, PNLP, GRAT, PF…), alertes, lots, corrections et historique de chaque produit. |
 | Ma journée | Ventes du jour, annulation (avec motif), réimpression des reçus, ouverture et fermeture de caisse. |
 | Crédits | Qui doit combien, historique, remboursements, relance WhatsApp. |
@@ -24,9 +24,16 @@ et rapports (dont le formulaire « Rapports produits commandes recouvrables » d
 
 ## Comptes et droits
 
-- Chaque utilisateur crée son compte sur l'écran de connexion (« Créer un compte »).
-- **Le premier compte créé devient gérant.** Les suivants sont vendeurs.
-- Le gérant a tous les droits. Ceux du vendeur se règlent dans **Réglages** : vendre, entrée de stock, crédit, programmes, corriger le stock, annuler une vente, changer les prix, voir les rapports, modifier la Base.
+- On se connecte avec un **identifiant** et un **mot de passe**. Il n'y a pas d'inscription libre : **c'est le gérant qui crée les comptes** dans **Réglages → Utilisateurs**, et qui peut redonner un mot de passe.
+- Le premier compte (créé avec une adresse e-mail) est le gérant. Il peut se connecter en tapant son adresse e-mail dans la case « Identifiant ».
+- Trois rôles :
+  - **Gérant** (administrateur) : tous les droits, y compris les Réglages ;
+  - **Responsable** : droits réglables, larges par défaut (vente, entrées, crédits, programmes, corrections, annulations, rapports) ;
+  - **Vendeur** : droits réglables, limités par défaut (vente, entrées, crédits, programmes).
+- Les droits du responsable et du vendeur se cochent dans **Réglages → Droits par rôle**.
+- Chacun peut changer son mot de passe avec le bouton « Mon mot de passe », en haut de l'écran.
+
+Les comptes créés par le gérant n'ont pas d'adresse e-mail réelle : l'identifiant est enregistré sous la forme `identifiant@pharmacie.local`. La création passe par la fonction serveur `supabase/functions/utilisateurs`, qui vérifie que l'appel vient bien d'un gérant.
 
 ## Mise en ligne (GitHub Pages)
 
@@ -51,7 +58,8 @@ Les fichiers SQL sont dans `supabase/migrations/` et ont déjà été appliqués
 
 - `001_schema.sql` : tables, sécurité RLS, vues de stock et fonctions métier (vente avec sortie du lot qui périme en premier, entrée, correction, annulation, caisse, crédits, rapport mensuel) ;
 - `002_donnees_initiales.sql` : programmes (Vente, PNLP, Gratuité, PF), droits par défaut du vendeur, et la liste des produits recouvrables tirée des fiches du district ;
-- `003_securite.sql` : corrections demandées par l'audit de sécurité Supabase.
+- `003_securite.sql` : corrections demandées par l'audit de sécurité Supabase ;
+- `004_identifiants_et_responsable.sql` : connexion par identifiant, rôle « responsable » et droits par rôle.
 
 Les prix de départ viennent des fiches papier : vérifiez-les et complétez-les dans l'onglet **Base**. Ceux qui manquent sont surlignés en jaune.
 

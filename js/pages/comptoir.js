@@ -180,7 +180,8 @@ export async function render(el, ctx) {
                   <button class="link small" style="color:var(--rouge)" data-retirer="${p.id}">Retirer</button>
                 </div>
                 <div class="inline"><button class="qb" aria-label="Diminuer" data-moins="${p.id}">−</button>
-                  <span class="num" style="min-width:28px;text-align:center;font-size:18px;font-weight:600">${n}</span>
+                  <label class="sr" for="qte-${p.id}">Quantité ${esc(p.designation)}</label>
+                  <input class="in num" id="qte-${p.id}" data-qte="${p.id}" inputmode="numeric" value="${n}" style="width:64px;min-height:44px;text-align:center;font-size:18px;font-weight:600;padding:0 4px">
                   <button class="qb" aria-label="Augmenter" data-plus="${p.id}">+</button></div>
                 <div class="num r" style="min-width:80px;font-weight:600">${estVente ? fmtF(n * p.prix_vente) : '0 F'}</div>
               </div>`).join('') : '<div class="muted" style="padding:30px 18px;text-align:center">Aucun article. Cherchez, scannez ou touchez un produit.</div>'}
@@ -273,6 +274,19 @@ export async function render(el, ctx) {
       dessiner();
     });
     el.querySelectorAll('[data-retirer]').forEach((b) => b.onclick = () => { etat.panier.delete(Number(b.dataset.retirer)); dessiner(); });
+    el.querySelectorAll('[data-qte]').forEach((i) => {
+      i.onfocus = () => i.select();
+      i.onkeydown = (e) => { if (e.key === 'Enter') i.blur(); };
+      i.onchange = () => {
+        const id = Number(i.dataset.qte);
+        const p = prodPar(id);
+        let n = entier(i.value);
+        if (n === null || n <= 0) { etat.panier.delete(id); return dessiner(); }
+        if (n > stockDe(p)) { toast('Stock disponible : ' + stockDe(p) + '.', 'warn'); n = stockDe(p); }
+        etat.panier.set(id, n);
+        dessiner();
+      };
+    });
 
     el.querySelector('details.patient').ontoggle = (e) => { etat.patientOuvert = e.target.open; };
     el.querySelectorAll('[data-p]').forEach((i) => {
