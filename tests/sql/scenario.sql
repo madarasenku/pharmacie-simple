@@ -301,6 +301,9 @@ do $$ declare x text; begin
   select string_agg(c.relname, ', ') into x from pg_class c join pg_namespace n on n.oid = c.relnamespace
   where n.nspname = 'public' and c.relkind = 'v' and not coalesce(c.reloptions @> '{security_invoker=true}', false);
   assert x is null, 'vues sans security_invoker : ' || x;
+  assert not has_function_privilege('authenticated', 'public.exiger(text)', 'execute'), 'exiger : interne';
+  assert not has_function_privilege('authenticated', 'public.journaliser(text, jsonb)', 'execute'), 'journaliser : interne (pas de faux journal)';
+  assert has_function_privilege('authenticated', 'public.est_membre()', 'execute'), 'est_membre : nécessaire aux règles RLS';
 end $$;
 
 \echo 'Scénario base de données : OK'

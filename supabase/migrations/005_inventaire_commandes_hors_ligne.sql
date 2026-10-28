@@ -777,3 +777,6 @@ revoke execute on function public.creer_profil() from authenticated;
 revoke execute on function public.rls_auto_enable() from authenticated;
 revoke execute on function public.journal_prix() from public, anon, authenticated;
 revoke execute on function public.empecher_detachement() from public, anon, authenticated;
+-- Fonctions internes, appelées seulement par les autres fonctions du serveur (jamais par le site)
+revoke execute on function public.exiger(text) from public, anon, authenticated;
+revoke execute on function public.caisse_ouverte() from public, anon, authenticated;
