@@ -1,153 +1,18 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>nRT</title>
-    <link rel="stylesheet" href="style.css">
-    <link rel="shortcut icon" href="sprite.svg" type="image/x-icon" />
-
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pharmacie Simple</title>
+  <meta name="description" content="Gestion de la pharmacie : vente, programmes, stock, caisse et rapports.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
-
-    <!--en tete jusqua la barre de navigation-->
-
-    <header>
-
-        <div>
-
-            <!--epremiere bande juste en haut-->
-
-            <div class="bande1">
-
-                <div class="bande1_1">
-
-                </div>
-                <div class="bande1_1">
-                    
-                </div>
-                <div class="bande1_1">
-                    
-                </div>
-                <div class="bande1_1">
-                    
-                </div>
-            </div>
-
-            <!--la bande noire-->
-
-            <div class="bande2">
-                <div class="bande2_1">
-
-                </div>
-                <div class="bande2_2">
-
-                </div>
-
-            </div>
-
-            <!--la bande de recherche et logo ect-->
-
-            <div class="bande3">
-                <!--la case du logo-->
-                <div class="bande3_1">
-
-                </div>
-
-                <!--les liens juste à droite-->
-
-                <div class="bande3_2">
-
-                    <div class="search">
-                        <form>
-                            <input type="text" name="text" class="search" placeholder="search my shop">
-                            <input type="submit" name="submit" class="submit" value="search">
-                        </form>
-                    </div>
-
-                    <div class="welcome">
-                        <marquee behavior=scroll width="300px">une nouvelle saison. un nouveau style.</marquee>
-                    </div>
-
-                    <div class="menu">
-                        <nav>
-                            <ul>
-                                <li><a href="#" title="mon compte">My account</a></li>
-                                <li><a href="#" title="liste de souhaits">My whishlist</a></li>
-                                <li><a href="#" title="mon panier">My Cart</a></li>
-                                <li><a href="#" title="verifier">Checkout</a></li>
-                                <li><a href="#" title="se connecter">login</a></li>
-                            </ul>
-                        </nav>
-                    </div>
-                </div>
-            
-            </div>
-
-        <!--barre de navigation principale-->
-
-            <div class="bande4">
-                <nav class="nav__list">
-                    <ul>
-                        <li><a href="#" title="home">Home</a></li>
-                        <li><a href="#" title="furniture">Furniture</a></li>
-                        <li><a href="#" title="electronics">electronics</a></li>
-                        <li><a href="#" title="apparels">Apparels</a></li>
-                        <li><a href="#" title="music">music</a></li>
-                        <li><a href="#" title="E-book">E-Book</a></li>
-                    </ul>
-                </nav>
-            </div>
-
-    </header>
-
-    <!--corps de la page-->
-
-    <div class="call_to_action">
-        <section class="section1">
-            <div class="section1_1">
-
-            </div>
-
-            <div class="section1_2">
-                
-            </div>
-
-
-        </section>
-
-        <section class="section2">
-            <div class="section2_1">
-
-            </div>
-
-            <div class="section2_2">
-                
-            </div>
-            
-        </section>
-
-        <section class="section3">
-            <div class="section3_1">
-
-            </div>
-
-            <div class="section3_2">
-                
-            </div>
-
-            <div class="section3_3">
-                
-            </div>
-            
-        </section>
-
-
-
-
-
-    </div>
-    
+  <div id="app"><div class="login-wrap"><div class="login">Chargement…</div></div></div>
+  <div id="print-root"></div>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <script type="module" src="js/app.js"></script>
 </body>
 </html>

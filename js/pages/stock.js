@@ -1,0 +1,149 @@
+// Mon stock : stock par origine, alertes, lots, corrections et historique.
+import { esc, fmt, fmtPeremption, fmtDateHeure, q, rpc, erreur, toast, modal, chargerCatalogue, correspond, entier, csv, telecharger, isoJour, joursAvant } from '../util.js';
+
+const TYPES = { entree: 'Entrée', vente: 'Vente', distribution: 'Distribution', correction: 'Correction', perime: 'Périmé', annulation: 'Annulation' };
+
+export async function render(el, ctx) {
+  const { sb } = ctx;
+  let catalogue = [];
+  let filtre = 'tout';
+  let recherche = '';
+  const origines = ctx.programmes.filter((p) => p.actif);
+  const vente = ctx.vente;
+
+  function etatProduit(p) {
+    const cles = Object.keys(p.origines).map(Number);
+    if (!cles.length) return { cle: 'aucun', texte: 'Sans origine', badge: 'b-low' };
+    const nom = (id) => { const o = origines.find((x) => x.id === id); return o ? (o.est_vente ? 'Vente' : o.sigle) : '?'; };
+    const ruptures = cles.filter((id) => p.origines[id].quantite <= 0 && (p.origines[id].cmm > 0 || id === vente?.id));
+    const bas = cles.filter((id) => p.origines[id].quantite > 0 && p.origines[id].quantite < Math.max(p.stock_min, Math.ceil(p.origines[id].cmm)));
+    const perimes = cles.some((id) => p.origines[id].perimee > 0);
+    const bientot = cles.some((id) => { const j = joursAvant(p.origines[id].prochaine); return j !== null && j <= 90; });
+    if (ruptures.length) return { cle: 'rupture', texte: 'Rupture · ' + ruptures.map(nom).join(', '), badge: 'b-out' };
+    if (bas.length) return { cle: 'bas', texte: 'Bas · ' + bas.map(nom).join(', '), badge: 'b-low' };
+    if (perimes) return { cle: 'perime', texte: 'Lot périmé à retirer', badge: 'b-out' };
+    if (bientot) return { cle: 'bientot', texte: 'Périme bientôt', badge: 'b-exp' };
+    return { cle: 'ok', texte: 'OK', badge: 'b-ok' };
+  }
+
+  function dessiner() {
+    const avecEtat = catalogue.filter((p) => p.actif).map((p) => ({ p, e: etatProduit(p) }));
+    const compte = (k) => avecEtat.filter((x) => x.e.cle === k).length;
+    const liste = avecEtat
+      .filter((x) => filtre === 'tout' || x.e.cle === filtre || (filtre === 'bas' && x.e.cle === 'rupture'))
+      .filter((x) => correspond(x.p, recherche));
+
+    const aCommander = vente ? catalogue.filter((p) => p.actif && p.origines[vente.id]).map((p) => {
+      const o = p.origines[vente.id];
+      return { p, o, qte: Math.max(0, Math.ceil(2 * o.cmm - o.quantite)) };
+    }).filter((x) => x.qte > 0 || (x.o.quantite < x.p.stock_min)) : [];
+    const aDemander = [];
+    for (const p of catalogue) for (const o of origines.filter((x) => !x.est_vente)) {
+      const s = p.origines[o.id];
+      if (s && (s.quantite < Math.max(p.stock_min, Math.ceil(s.cmm)) || (s.quantite === 0 && s.cmm > 0))) aDemander.push({ p, o, s });
+    }
+
+    el.innerHTML = `
+      <div class="page-head"><div><h1>Mon stock</h1><div class="small muted">Le stock baisse à chaque vente ou distribution et monte à chaque entrée. Cliquez sur un produit pour voir ses lots et son historique.</div></div>
+        <div class="inline"><button class="btn" id="export">Exporter Excel</button>${ctx.peut('rapports') ? '<a class="btn" href="#/rapport">Rapport de commande district</a>' : ''}</div></div>
+      <div class="inline">
+        <div style="flex:1 1 280px"><label class="sr" for="rech">Chercher</label><input class="in" id="rech" type="search" placeholder="Chercher un produit ou un code-barres" value="${esc(recherche)}"></div>
+        <div class="inline" role="group" aria-label="Filtrer">
+          ${[['tout', 'Tout', avecEtat.length], ['bas', 'À commander', compte('bas') + compte('rupture')], ['rupture', 'Rupture', compte('rupture')], ['bientot', 'Périme bientôt', compte('bientot')], ['perime', 'Périmés', compte('perime')]]
+            .map(([k, l, n]) => `<button class="chip ${filtre === k ? 'on' : ''}" data-filtre="${k}">${l} <span class="num">${n}</span></button>`).join('')}
+        </div>
+      </div>
+      <div class="card"><div class="table-box"><table class="tbl">
+        <thead><tr><th>Produit</th>${origines.map((o) => `<th class="r ${o.est_vente ? '' : 'prog-col'}">${esc(o.est_vente ? 'Vente' : o.sigle)}</th>`).join('')}<th class="r">Total</th><th class="r">Conso / mois</th><th>Péremption</th><th>État</th></tr></thead>
+        <tbody>${liste.map(({ p, e }) => {
+          const tot = Object.values(p.origines).reduce((s, o) => s + o.quantite, 0);
+          const proch = Object.values(p.origines).map((o) => o.prochaine).filter(Boolean).sort()[0];
+          const cmm = Object.values(p.origines).reduce((s, o) => s + o.cmm, 0);
+          return `<tr class="clic" data-produit="${p.id}"><td>${esc(p.designation)}</td>
+            ${origines.map((o) => `<td class="num r ${o.est_vente ? '' : 'prog-col'}" style="${o.est_vente ? 'font-weight:600' : ''}">${p.origines[o.id] ? fmt(p.origines[o.id].quantite) : '—'}</td>`).join('')}
+            <td class="num r" style="font-weight:700">${fmt(tot)}</td><td class="num r muted">${cmm ? cmm.toFixed(1).replace('.', ',') : '—'}</td>
+            <td class="num">${fmtPeremption(proch)}</td><td><span class="badge ${e.badge}">${esc(e.texte)}</span></td></tr>`;
+        }).join('') || `<tr><td colspan="${origines.length + 5}" class="muted">Aucun produit.</td></tr>`}</tbody>
+      </table></div></div>
+
+      <div class="row">
+        <section class="card card-pad stack" style="flex:1 1 380px">
+          <h2>À commander (vente)</h2>
+          <div class="small muted">Quantité = 2 × consommation mensuelle − stock disponible.</div>
+          ${aCommander.map((x) => `<div class="inline" style="justify-content:space-between;border-bottom:1px solid #EDF1EF;padding:6px 0">
+            <span>${esc(x.p.designation)}<br><span class="small muted">stock ${x.o.quantite} · conso ${String(x.o.cmm).replace('.', ',')}/mois</span></span><strong class="num">${fmt(x.qte)}</strong></div>`).join('') || '<div class="muted">Rien à commander.</div>'}
+        </section>
+        <section class="card card-pad stack" style="flex:1 1 380px">
+          <h2 style="color:var(--violet)">À demander aux programmes</h2>
+          ${aDemander.map((x) => `<div class="inline" style="justify-content:space-between;border-bottom:1px solid #EDF1EF;padding:6px 0">
+            <span>${esc(x.p.designation)}<br><span class="small muted">stock ${x.s.quantite}</span></span><span class="badge b-prog">${esc(x.o.sigle)}</span></div>`).join('') || '<div class="muted">Rien à demander.</div>'}
+        </section>
+      </div>`;
+
+    el.querySelectorAll('[data-filtre]').forEach((b) => b.onclick = () => { filtre = b.dataset.filtre; dessiner(); });
+    const r = el.querySelector('#rech');
+    r.oninput = () => {
+      recherche = r.value;
+      const pos = r.selectionStart;
+      dessiner();
+      const n = el.querySelector('#rech');
+      n.focus();
+      n.setSelectionRange(pos, pos);
+    };
+    el.querySelectorAll('[data-produit]').forEach((tr) => tr.onclick = () => detail(catalogue.find((p) => p.id === Number(tr.dataset.produit))));
+    el.querySelector('#export').onclick = () => {
+      const lignes = [['Produit', ...origines.map((o) => o.est_vente ? 'Vente' : o.sigle), 'Total', 'Conso/mois', 'État']];
+      for (const { p, e } of liste) {
+        lignes.push([p.designation, ...origines.map((o) => p.origines[o.id]?.quantite ?? ''), Object.values(p.origines).reduce((s, o) => s + o.quantite, 0),
+          Object.values(p.origines).reduce((s, o) => s + o.cmm, 0), e.texte]);
+      }
+      telecharger('stock-' + isoJour() + '.csv', csv(lignes));
+    };
+  }
+
+  async function detail(p) {
+    const [lots, mvts] = await Promise.all([
+      q(sb.from('lots').select('*').eq('produit_id', p.id).order('peremption', { nullsFirst: false })),
+      q(sb.from('mouvements').select('*, profiles(nom)').eq('produit_id', p.id).order('created_at', { ascending: false }).limit(40))
+    ]);
+    const nom = (id) => { const o = origines.find((x) => x.id === id); return o ? (o.est_vente ? 'Vente' : o.sigle) : '?'; };
+    const peutCorriger = ctx.peut('corriger');
+    const m = modal(p.designation, `
+      <div class="small muted">${p.code_barres ? 'Code-barres ' + esc(p.code_barres) + ' · ' : ''}Prix de vente ${fmt(p.prix_vente)} F · minimum ${p.stock_min}</div>
+      <h3>Lots en stock</h3>
+      <div class="table-box"><table class="tbl"><thead><tr><th>Origine</th><th>Lot</th><th>Péremption</th><th class="r">Qté</th>${peutCorriger ? '<th>Correction</th>' : ''}</tr></thead>
+        <tbody>${lots.filter((l) => l.quantite > 0 || peutCorriger).map((l) => {
+          const perime = l.peremption && new Date(l.peremption) < new Date(isoJour());
+          return `<tr><td><span class="badge ${origines.find((o) => o.id === l.programme_id)?.est_vente ? 'b-ok' : 'b-prog'}">${esc(nom(l.programme_id))}</span></td>
+          <td class="num">${esc(l.numero || '—')}</td><td class="num">${fmtPeremption(l.peremption)} ${perime ? '<span class="badge b-out">Périmé</span>' : ''}</td>
+          <td class="num r" style="font-weight:600">${fmt(l.quantite)}</td>
+          ${peutCorriger ? `<td><div class="inline" style="flex-wrap:nowrap">
+            <label class="sr" for="c-${l.id}">Quantité réelle</label><input class="in num" id="c-${l.id}" style="width:80px" inputmode="numeric" placeholder="réel">
+            <select class="in" data-motif="${l.id}" style="width:150px" aria-label="Motif">${perime ? '<option>Périmé jeté</option>' : ''}<option>Erreur de comptage</option><option>Casse / perte</option><option>Périmé jeté</option></select>
+            <button class="btn btn-sm" data-corriger="${l.id}">OK</button></div></td>` : ''}</tr>`;
+        }).join('') || '<tr><td colspan="5" class="muted">Aucun lot.</td></tr>'}</tbody></table></div>
+      ${peutCorriger ? '' : '<div class="small muted">Seul le gérant (ou un vendeur autorisé) peut corriger le stock.</div>'}
+      <h3>Historique</h3>
+      <div class="table-box"><table class="tbl"><thead><tr><th>Date</th><th>Type</th><th>Origine</th><th>Référence</th><th class="r">Qté</th><th>Par</th></tr></thead>
+        <tbody>${mvts.map((x) => `<tr><td class="num small">${fmtDateHeure(x.created_at)}</td><td>${esc(TYPES[x.type])}</td><td>${esc(nom(x.programme_id))}</td>
+          <td class="small">${esc(x.reference || x.motif || x.fournisseur || '')}</td>
+          <td class="num r" style="font-weight:600;color:${x.quantite > 0 ? '#1A6438' : 'var(--rouge)'}">${x.quantite > 0 ? '+' : '−'}${fmt(Math.abs(x.quantite))}</td>
+          <td class="small muted">${esc(x.profiles?.nom || '')}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Aucun mouvement.</td></tr>'}</tbody></table></div>`, { large: true });
+    m.el.querySelectorAll('[data-corriger]').forEach((b) => b.onclick = async () => {
+      const id = Number(b.dataset.corriger);
+      const reel = entier(m.el.querySelector('#c-' + id).value);
+      if (reel === null || reel < 0) return toast('Saisissez la quantité réellement présente.', 'warn');
+      try {
+        await rpc(sb, 'corriger_stock', { p_lot_id: id, p_quantite_reelle: reel, p_motif: m.el.querySelector(`[data-motif="${id}"]`).value });
+        toast('Correction enregistrée.');
+        m.fermer();
+        catalogue = await chargerCatalogue(sb);
+        dessiner();
+        detail(catalogue.find((x) => x.id === p.id));
+      } catch (e) { erreur(e); }
+    });
+  }
+
+  catalogue = await chargerCatalogue(sb);
+  dessiner();
+}
