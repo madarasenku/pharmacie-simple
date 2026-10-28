@@ -1,24 +1,29 @@
 // Entrée de stock : achat pour la vente ou dotation d'un programme.
-import { esc, fmt, fmtF, fmtHeure, fmtPeremption, q, rpc, erreur, toast, chargerCatalogue, correspond, entier, nombre, isoJour } from '../util.js';
+import { esc, fmt, fmtF, fmtHeure, fmtPeremption, q, qMaj, rpc, tout, erreur, toast, confirmer, chargerCatalogue, correspond, entier, nombre, isoJour, joursAvant } from '../util.js';
 
 export async function render(el, ctx) {
   const { sb } = ctx;
   let catalogue = [];
   let choisi = null;
   let codeInconnu = '';
+  let creation = false;
   let recherche = '';
   let entrees = [];
+  let commandes = []; // commandes au district pas encore entièrement reçues
 
   async function charger() {
     const debut = new Date(isoJour() + 'T00:00:00').toISOString();
-    [catalogue, entrees] = await Promise.all([
+    [catalogue, entrees, commandes] = await Promise.all([
       chargerCatalogue(sb),
-      q(sb.from('mouvements').select('id, quantite, prix_unitaire, fournisseur, reference, created_at, programme_id, produits(designation), lots(numero, peremption)')
-        .eq('type', 'entree').gte('created_at', debut).order('created_at', { ascending: false }))
+      tout(() => sb.from('mouvements').select('id, quantite, prix_unitaire, fournisseur, reference, created_at, programme_id, commande_id, produits(designation), lots(numero, peremption)')
+        .eq('type', 'entree').gte('created_at', debut).order('created_at', { ascending: false }).order('id', { ascending: false })),
+      q(sb.from('commandes').select('id, numero, programme_id, mois, statut, commandes_lignes(produit_id, quantite, recu)')
+        .in('statut', ['envoyee', 'partielle']).order('created_at'))
     ]);
     if (choisi) choisi = catalogue.find((p) => p.id === choisi.id) || null;
   }
 
+  const commandeNumero = (id) => commandes.find((c) => c.id === id)?.numero || 'commande';
   const nomOrigine = (id) => {
     const p = ctx.programmes.find((x) => x.id === id);
     return p ? (p.est_vente ? 'Vente' : p.sigle) : '?';
@@ -37,11 +42,16 @@ export async function render(el, ctx) {
       <div class="row">
         <section class="col-main">
           <div class="card card-pad stack">
-            <div><label class="lbl" for="code">1. Scanner le code-barres ou chercher le produit</label>
-              <input class="in scan num" id="code" autocomplete="off" placeholder="Scannez ou tapez, puis Entrée" value="${esc(recherche)}"></div>
+            <div class="inline" style="justify-content:space-between;align-items:flex-end">
+              <label class="lbl" for="code" style="margin:0">1. Tapez le nom du médicament ou scannez son code-barres</label>
+              ${!creation && ctx.peut('entree') ? '<button class="btn btn-sm" id="nouveau-med">+ Nouveau médicament</button>' : ''}</div>
+            <input class="in scan" id="code" autocomplete="off" placeholder="Ex. : paracétamol, ou scannez la boîte" value="${esc(recherche)}">
             ${resultats.length ? `<div class="stack" style="gap:6px">${resultats.map((p) => `<button class="btn" style="justify-content:space-between;text-align:left" data-choix="${p.id}">
               <span>${esc(p.designation)}</span><span class="small muted">${p.code_barres ? esc(p.code_barres) : ''}</span></button>`).join('')}</div>` : ''}
-            ${codeInconnu ? formulaireNouveau() : ''}
+            ${recherche.trim() && !resultats.length && !choisi && !creation ? `<div class="alert alert-warn" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between">
+              <span>Aucun médicament ne correspond à « ${esc(recherche.trim())} ».</span>
+              ${ctx.peut('entree') ? '<button class="btn btn-sm btn-p" id="creer-depuis-recherche">Créer ce médicament</button>' : ''}</div>` : ''}
+            ${creation ? formulaireNouveau() : ''}
             ${choisi ? `
               <div class="alert alert-ok" style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-weight:400">
                 <div><strong style="color:var(--vert-fonce);font-size:16px">${esc(choisi.designation)}</strong><br>
@@ -57,6 +67,7 @@ export async function render(el, ctx) {
             <h2>2. Origine, quantité, lot et prix</h2>
             <div><label class="lbl" for="origine">D'où vient cette livraison ?</label>
               <select class="in" id="origine">${origines.map((o) => `<option value="${o.id}">${esc(o.est_vente ? 'Achat pour la vente' : 'Dotation ' + o.nom + ' (' + o.sigle + ')')}${choisi.origines[o.id] ? '' : ' — nouveau pour ce produit'}</option>`).join('')}</select></div>
+            <div id="zone-commande"></div>
             <div class="grid-3">
               <div><label class="lbl" for="qte">Quantité reçue</label><input class="in num" id="qte" inputmode="numeric"></div>
               <div><label class="lbl" for="lot">N° de lot</label><input class="in num" id="lot"></div>
@@ -80,7 +91,7 @@ export async function render(el, ctx) {
             <div class="card-head"><h2>Entrées d'aujourd'hui</h2><span class="small muted num">${fmtF(totalAchats)} d'achats</span></div>
             <div class="table-box"><table class="tbl">
               <thead><tr><th>Heure</th><th>Produit</th><th>Origine</th><th>Lot · pér.</th><th class="r">Qté</th></tr></thead>
-              <tbody>${entrees.map((e) => `<tr><td class="num">${fmtHeure(e.created_at)}</td><td>${esc(e.produits?.designation)}</td>
+              <tbody>${entrees.map((e) => `<tr><td class="num">${fmtHeure(e.created_at)}</td><td>${esc(e.produits?.designation)}${e.commande_id ? `<br><span class="small muted">${esc(commandeNumero(e.commande_id))}</span>` : ''}</td>
                 <td><span class="badge ${ctx.programmes.find((p) => p.id === e.programme_id)?.est_vente ? 'b-ok' : 'b-prog'}">${esc(nomOrigine(e.programme_id))}</span></td>
                 <td class="num small">${esc(e.lots?.numero || '—')} · ${fmtPeremption(e.lots?.peremption)}</td>
                 <td class="num r" style="color:#1A6438;font-weight:600">+${fmt(e.quantite)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Aucune entrée aujourd’hui.</td></tr>'}</tbody>
@@ -94,10 +105,12 @@ export async function render(el, ctx) {
   const codeScanne = (t) => /^\d{6,}$/.test(String(t).trim());
 
   function formulaireNouveau() {
+    const nomPropose = codeScanne(recherche) ? '' : recherche.trim().toUpperCase();
     return `<div class="stack" style="padding:16px;border-radius:12px;background:#FFF6DE;border:1px solid #F0D58A">
-      <div><strong style="color:var(--orange)">Code inconnu : ${esc(codeInconnu)}</strong>
-      <div class="small">Créez ce produit une seule fois. Au prochain scan, il sera reconnu (ici et au comptoir).</div></div>
-      <div><label class="lbl" for="n-nom">Désignation</label><input class="in" id="n-nom" placeholder="Ex. : CIPROFLOXACINE 500 MG CP"></div>
+      <div><strong style="color:var(--orange)">${codeInconnu ? 'Code-barres inconnu : ' + esc(codeInconnu) : 'Nouveau médicament'}</strong>
+      <div class="small">Créez ce médicament une seule fois : il sera ensuite proposé ici et au comptoir.</div></div>
+      <div><label class="lbl" for="n-nom">Désignation</label><input class="in" id="n-nom" placeholder="Ex. : CIPROFLOXACINE 500 MG CP" value="${esc(nomPropose)}"></div>
+      <div><label class="lbl" for="n-code">Code-barres (facultatif)</label><input class="in num" id="n-code" placeholder="Laisser vide si la boîte n'en a pas" value="${esc(codeInconnu)}"></div>
       <div class="grid-2">
         <div><label class="lbl" for="n-pres">Présentation</label><input class="in" id="n-pres" placeholder="Boîte, plaquette, flacon…"></div>
         <div><label class="lbl" for="n-min">Stock minimum (alerte)</label><input class="in num" id="n-min" inputmode="numeric" value="0"></div>
@@ -112,6 +125,7 @@ export async function render(el, ctx) {
   function choisir(p) {
     choisi = p;
     codeInconnu = '';
+    creation = false;
     dessiner();
     el.querySelector('#qte')?.focus();
   }
@@ -122,6 +136,7 @@ export async function render(el, ctx) {
       recherche = code.value;
       choisi = null;
       codeInconnu = '';
+      creation = false;
       const pos = code.selectionStart;
       dessiner();
       const c = el.querySelector('#code');
@@ -140,6 +155,7 @@ export async function render(el, ctx) {
       if (codeScanne(t) && !res.length) {
         if (!ctx.peut('entree')) return toast('Code inconnu.', 'warn');
         codeInconnu = t;
+        creation = true;
         dessiner();
         el.querySelector('#n-nom')?.focus();
       }
@@ -148,12 +164,17 @@ export async function render(el, ctx) {
     const ch = el.querySelector('#changer');
     if (ch) ch.onclick = () => { choisi = null; recherche = ''; dessiner(); el.querySelector('#code').focus(); };
     const an = el.querySelector('#annuler-nouveau');
-    if (an) an.onclick = () => { codeInconnu = ''; dessiner(); };
+    if (an) an.onclick = () => { codeInconnu = ''; creation = false; dessiner(); };
+    const ouvrirCreation = () => { creation = true; choisi = null; dessiner(); el.querySelector('#n-nom')?.focus(); };
+    const nm = el.querySelector('#nouveau-med');
+    if (nm) nm.onclick = () => { codeInconnu = ''; ouvrirCreation(); };
+    const cr2 = el.querySelector('#creer-depuis-recherche');
+    if (cr2) cr2.onclick = ouvrirCreation;
 
     const lc = el.querySelector('#lier-code');
     if (lc) lc.onclick = async () => {
       try {
-        await q(sb.from('produits').update({ code_barres: recherche.trim() }).eq('id', choisi.id));
+        await qMaj(sb.from('produits').update({ code_barres: recherche.trim() }).eq('id', choisi.id).select('id'));
         toast('Code-barres associé.');
         await charger();
         dessiner();
@@ -169,14 +190,14 @@ export async function render(el, ctx) {
       cr.disabled = true;
       try {
         const p = await q(sb.from('produits').insert({
-          designation: nom.toUpperCase(), code_barres: codeInconnu,
+          designation: nom.toUpperCase(), code_barres: el.querySelector('#n-code').value.trim() || null,
           presentation: el.querySelector('#n-pres').value.trim() || null,
           stock_min: entier(el.querySelector('#n-min').value) || 0
         }).select().single());
         await q(sb.from('produits_programmes').insert(progs.map((id) => ({ produit_id: p.id, programme_id: id }))));
-        toast('Produit créé.');
+        toast('Médicament créé.');
         await charger();
-        recherche = codeInconnu;
+        recherche = p.designation;
         choisir(catalogue.find((x) => x.id === p.id));
       } catch (e) { cr.disabled = false; erreur(e); }
     };
@@ -187,6 +208,19 @@ export async function render(el, ctx) {
         const estVente = ctx.programmes.find((p) => p.id === Number(og.value))?.est_vente;
         el.querySelector('#zone-prix').classList.toggle('hidden', !estVente);
         el.querySelector('#four').value = estVente ? 'Pharmacie du district' : 'Dotation ' + (ctx.programmes.find((p) => p.id === Number(og.value))?.sigle || '');
+        majCommande();
+      };
+      // Livraison d'une commande au district : le reçu s'impute sur ce qui reste à recevoir
+      const majCommande = () => {
+        const zone = el.querySelector('#zone-commande');
+        const liste = commandes.filter((c) => c.programme_id === Number(og.value))
+          .map((c) => ({ c, l: c.commandes_lignes.find((x) => x.produit_id === choisi.id) }));
+        if (!liste.length) { zone.innerHTML = ''; return; }
+        const avecReste = liste.filter((x) => x.l && x.l.recu < x.l.quantite);
+        const defaut = avecReste.length === 1 ? avecReste[0].c.id : '';
+        zone.innerHTML = `<label class="lbl" for="commande">Cette livraison correspond à une commande ?</label>
+          <select class="in" id="commande"><option value="">Non, livraison hors commande</option>
+          ${liste.map(({ c, l }) => `<option value="${c.id}" ${c.id === defaut ? 'selected' : ''}>${esc(c.numero)} — ${l ? `commandé ${l.quantite}, déjà reçu ${l.recu}, reste ${Math.max(0, l.quantite - l.recu)}` : 'ce produit n’y figure pas'}</option>`).join('')}</select>`;
       };
       og.onchange = majPrix;
       majPrix();
@@ -212,7 +246,11 @@ export async function render(el, ctx) {
     const qte = entier(el.querySelector('#qte').value);
     if (!qte || qte <= 0) return toast('Indiquez la quantité reçue.', 'warn');
     const per = el.querySelector('#per').value;
-    if (per && new Date(per) < new Date()) return toast('Cette date de péremption est déjà passée.', 'warn');
+    const jours = joursAvant(per);
+    if (per && jours < 0) return toast('Cette date de péremption est déjà passée.', 'warn');
+    if (per && jours < 90 && !(await confirmer('Péremption proche', `Ce lot périme dans ${jours} jour(s). L’ajouter quand même au stock ?`, 'Ajouter quand même'))) return;
+    if (!per && !(await confirmer('Pas de date de péremption', 'Sans date, ce lot sera vendu après ceux qui en ont une et n’apparaîtra pas dans les alertes. Continuer ?', 'Continuer sans date'))) return;
+    const commande = entier(el.querySelector('#commande')?.value);
     bouton.disabled = true;
     try {
       await rpc(sb, 'enregistrer_entree', { p: {
@@ -220,7 +258,8 @@ export async function render(el, ctx) {
         numero_lot: el.querySelector('#lot').value.trim(), peremption: per || null,
         prix_achat: estVente ? nombre(el.querySelector('#pa').value) : null,
         prix_vente: estVente && ctx.peut('prix') ? nombre(el.querySelector('#pv').value) : null,
-        fournisseur: el.querySelector('#four').value.trim(), reference: el.querySelector('#ref').value.trim()
+        fournisseur: el.querySelector('#four').value.trim(), reference: el.querySelector('#ref').value.trim(),
+        commande_id: commande || null
       } });
       toast(qte + ' × ' + choisi.designation + ' ajouté(s) au stock.');
       choisi = null;

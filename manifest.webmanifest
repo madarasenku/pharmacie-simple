@@ -1,0 +1,14 @@
+{
+  "name": "Pharmacie Simple",
+  "short_name": "Pharmacie",
+  "description": "Vente, programmes, stock, caisse et rapports de la pharmacie.",
+  "lang": "fr",
+  "start_url": "./#/comptoir",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F2F5F4",
+  "theme_color": "#0B4A38",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

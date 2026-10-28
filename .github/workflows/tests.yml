@@ -1,0 +1,67 @@
+name: Tests
+
+# Les tests ne servent que s'ils tournent tout seuls : à chaque envoi, sur chaque
+# branche, et chaque jour (les écrans dépendent de la date : début de mois, péremptions…).
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+
+# Un seul passage par branche : un envoi sur une branche qui a une PR ne lance pas deux fois la suite
+concurrency:
+  group: tests-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  site:
+    name: Site (Chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # Le dépôt apt « google-chrome » des runners a parfois un index corrompu : Playwright
+      # utilise son propre Chromium, on retire ce dépôt pour que l'installation passe.
+      - name: Neutraliser le dépôt Chrome
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/google-chrome* || true
+          sudo grep -rlE 'dl\.google\.com|google-chrome' /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null | sudo xargs -r rm -f || true
+      - name: Installer Playwright et Chromium
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+      - name: Vérifier la syntaxe des modules
+        run: |
+          for f in js/*.js js/pages/*.js sw.js tests/*.js; do
+            node --check "$f" || exit 1
+          done
+          echo "Tous les modules parsent."
+      - name: Lancer la suite de tests
+        run: node tests/run.js
+
+  base:
+    name: Base de données (PostgreSQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Migrations + scénario métier (ventes, caisse, inventaire, commandes, rapport, sécurité)
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash tests/sql/run.sh

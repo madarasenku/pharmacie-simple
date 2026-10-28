@@ -1,0 +1,3 @@
+# Application interne de la pharmacie (données patients) — NE PAS indexer.
+User-agent: *
+Disallow: /

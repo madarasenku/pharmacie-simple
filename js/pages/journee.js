@@ -1,6 +1,7 @@
 // Ma journée : ventes du jour, annulations, réimpression et fermeture de caisse.
-import { esc, fmt, fmtF, fmtHeure, fmtDateHeure, q, rpc, erreur, toast, modal, imprimer, isoJour, entier, nombre } from '../util.js';
+import { esc, fmt, fmtF, fmtHeure, fmtDateHeure, q, rpc, tout, erreur, toast, modal, imprimer, isoJour, entier, nombre, estErreurReseau, confirmer } from '../util.js';
 import { ticketHtml } from './comptoir.js';
+import { lireFile, retirer, reessayer } from '../hors-ligne.js';
 
 const MODES = { especes: 'Espèces', momo: 'Mobile Money', credit: 'Crédit', gratuit: 'Gratuit' };
 
@@ -8,16 +9,64 @@ export async function render(el, ctx) {
   const { sb } = ctx;
   let jour = isoJour();
 
+  // Ventes faites hors ligne sur cet appareil : en attente d'envoi ou refusées par le serveur
+  function sectionFile() {
+    const file = lireFile();
+    if (!file.length) return '';
+    const miennes = file.filter((x) => x.utilisateur === ctx.profil.id);
+    const autres = file.length - miennes.length;
+    return `<section class="card">
+      <div class="card-head"><div><h2>Ventes faites hors ligne sur cet appareil</h2>
+        <div class="small muted">Elles partent automatiquement dès que internet revient. Une vente refusée (stock épuisé entre-temps, plafond de crédit…) attend votre décision.</div></div>
+        ${navigator.onLine ? '<button class="btn btn-sm btn-p" id="hl-envoyer">Envoyer maintenant</button>' : ''}</div>
+      <div class="table-box"><table class="tbl"><thead><tr><th>Heure</th><th>N° provisoire</th><th>Articles</th><th class="r">Montant</th><th>État</th><th></th></tr></thead>
+        <tbody>${miennes.map((x) => `<tr><td class="num small">${fmtDateHeure(x.cree_le)}</td><td class="num small">${esc(x.resume?.numero)}</td>
+          <td class="small">${esc(x.resume?.origine)} · ${esc(x.resume?.articles)}</td><td class="num r">${fmt(x.resume?.total)}</td>
+          <td>${x.etat === 'erreur' ? `<span class="badge b-out">Refusée</span><br><span class="small" style="color:var(--rouge)">${esc(x.erreur)}</span>`
+            : `<span class="badge b-low">En attente</span>${x.erreur ? `<br><span class="small muted">${esc(x.erreur)}</span>` : ''}`}</td>
+          <td><div class="inline" style="flex-wrap:nowrap">${x.etat === 'erreur' ? `<button class="btn btn-sm" data-hl-reessayer="${esc(x.ref)}">Réessayer</button>` : ''}
+            <button class="btn btn-sm btn-danger" data-hl-abandon="${esc(x.ref)}">Abandonner</button></div></td></tr>`).join('')}</tbody></table></div>
+      ${autres ? `<div class="small muted" style="padding:10px 14px">${autres} autre(s) vente(s) d’un autre compte attendent que cette personne se reconnecte sur cet appareil.</div>` : ''}
+    </section>`;
+  }
+
+  function brancherFile() {
+    el.querySelectorAll('[data-hl-reessayer]').forEach((b) => b.onclick = async () => { reessayer(b.dataset.hlReessayer); await ctx.synchroniser(); rafraichir(); });
+    el.querySelectorAll('[data-hl-abandon]').forEach((b) => b.onclick = async () => {
+      if (!(await confirmer('Abandonner cette vente ?', 'Elle ne sera jamais enregistrée. Si le patient a payé, remboursez-le ou refaites la vente au comptoir.', 'Abandonner'))) return;
+      retirer(b.dataset.hlAbandon);
+      rafraichir();
+    });
+    const env = el.querySelector('#hl-envoyer');
+    if (env) env.onclick = async () => { await ctx.synchroniser(); rafraichir(); };
+  }
+
+  const rafraichir = () => dessiner().catch(erreur);
+
   async function dessiner() {
     const debut = new Date(jour + 'T00:00:00');
     const fin = new Date(debut.getTime() + 86400000);
-    const [ventes, caisse, caissesJour] = await Promise.all([
-      q(sb.from('ventes').select('*, clients(nom), ventes_lignes(quantite, prix_unitaire, cout_unitaire, produit_id, produits(designation, prix_vente))')
-        .gte('created_at', debut.toISOString()).lt('created_at', fin.toISOString()).order('created_at', { ascending: false })),
-      q(sb.from('caisses').select('*').is('fermee_le', null).maybeSingle()),
-      q(sb.from('caisses').select('*').gte('ouverte_le', debut.toISOString()).lt('ouverte_le', fin.toISOString()).not('fermee_le', 'is', null).order('fermee_le', { ascending: false }))
-    ]);
-    const resume = caisse ? await rpc(sb, 'resume_caisse', { p_caisse: caisse.id }) : null;
+    let ventes, caisse, caissesJour, resume;
+    try {
+      [ventes, caisse, caissesJour] = await Promise.all([
+        tout(() => sb.from('ventes').select('*, clients(nom), ventes_lignes(quantite, prix_unitaire, cout_unitaire, produit_id, produits(designation, prix_vente))')
+          .gte('created_at', debut.toISOString()).lt('created_at', fin.toISOString()).order('created_at', { ascending: false }).order('id', { ascending: false })),
+        q(sb.from('caisses').select('*').is('fermee_le', null).maybeSingle()),
+        q(sb.from('caisses').select('*').gte('ouverte_le', debut.toISOString()).lt('ouverte_le', fin.toISOString()).not('fermee_le', 'is', null).order('fermee_le', { ascending: false }))
+      ]);
+      resume = caisse ? await rpc(sb, 'resume_caisse', { p_caisse: caisse.id }) : null;
+    } catch (e) {
+      if (!estErreurReseau(e)) throw e;
+      el.innerHTML = `<div class="page-head"><div><h1>Ma journée</h1></div></div>
+        <div class="alert alert-warn">Pas de connexion internet : les ventes du jour et la caisse s’afficheront au retour du réseau.</div>${sectionFile()}`;
+      brancherFile();
+      return;
+    }
+    // Caisses déjà fermées : leurs ventes ne s'annulent plus que par le gérant
+    const idsCaisses = [...new Set(ventes.map((v) => v.caisse_id).filter(Boolean))];
+    const fermees = new Set(idsCaisses.length
+      ? (await q(sb.from('caisses').select('id').in('id', idsCaisses).not('fermee_le', 'is', null))).map((c) => c.id) : []);
+    const peutAnnuler = (v) => ctx.peut('annuler') && (!fermees.has(v.caisse_id) || ctx.peut('gerant'));
 
     const valides = ventes.filter((v) => !v.annulee);
     const vv = valides.filter((v) => v.mode_paiement !== 'gratuit');
@@ -30,6 +79,7 @@ export async function render(el, ctx) {
     el.innerHTML = `
       <div class="page-head"><div><h1>Ma journée</h1><div class="small muted">Ventes, distributions et caisse.</div></div>
         <div><label class="lbl" for="jour">Jour</label><input class="in" type="date" id="jour" value="${jour}" max="${isoJour()}"></div></div>
+      ${sectionFile()}
       <section class="grid-kpi">
         <div class="card kpi"><div class="t">Ventes</div><div class="v">${vv.length}</div><div class="s">${ventes.length - valides.length} annulée(s)</div></div>
         <div class="card kpi"><div class="t">Chiffre d'affaires</div><div class="v">${fmt(ca)}</div><div class="s">FCFA (crédit compris)</div></div>
@@ -43,12 +93,12 @@ export async function render(el, ctx) {
           <div class="table-box"><table class="tbl">
             <thead><tr><th>Heure</th><th>N°</th><th>Articles</th><th>Paiement</th><th class="r">Montant</th><th></th></tr></thead>
             <tbody>${ventes.map((v) => `<tr class="${v.annulee ? 'off' : ''}">
-              <td class="num">${fmtHeure(v.created_at)}</td><td class="num small">${esc(v.numero)}</td>
+              <td class="num">${fmtHeure(v.created_at)}</td><td class="num small">${esc(v.numero)}${v.saisie_hors_ligne ? '<br><span class="badge b-low" title="Vente faite sans internet, envoyée plus tard">hors ligne</span>' : ''}</td>
               <td>${esc(v.ventes_lignes.map((l) => l.produits?.designation + ' × ' + l.quantite).join(', '))}${v.patient_nom ? `<br><span class="small muted">${esc(v.patient_nom)}</span>` : ''}</td>
               <td><span class="badge ${v.mode_paiement === 'gratuit' ? 'b-prog' : 'b-ok'}">${esc(v.mode_paiement === 'gratuit' ? nomOrigine(v.programme_id) : MODES[v.mode_paiement])}</span>${v.clients ? `<br><span class="small">${esc(v.clients.nom)}</span>` : ''}</td>
               <td class="num r" style="font-weight:600">${v.mode_paiement === 'gratuit' ? '0' : fmt(v.total)}</td>
               <td class="keep"><div class="inline" style="flex-wrap:nowrap">
-                ${v.annulee ? `<span class="badge b-out" title="${esc(v.motif_annulation || '')}">Annulée</span>` : `<button class="btn btn-sm" data-reimp="${v.id}">Reçu</button>${ctx.peut('annuler') ? `<button class="btn btn-sm btn-danger" data-annuler="${v.id}">Annuler</button>` : ''}`}
+                ${v.annulee ? `<span class="badge b-out" title="${esc(v.motif_annulation || '')}">Annulée</span>` : `<button class="btn btn-sm" data-reimp="${v.id}">Reçu</button>${peutAnnuler(v) ? `<button class="btn btn-sm btn-danger" data-annuler="${v.id}">Annuler</button>` : (ctx.peut('annuler') ? '<span class="badge b-low" title="Caisse déjà fermée : seul le gérant peut annuler">Caisse fermée</span>' : '')}`}
               </div></td></tr>`).join('') || '<tr><td colspan="6" class="muted">Aucune vente ce jour.</td></tr>'}</tbody>
           </table></div>
           ${ctx.peut('annuler') ? '' : '<div class="small muted" style="padding:10px 14px">Pour annuler une vente, demandez au gérant.</div>'}
@@ -78,7 +128,8 @@ export async function render(el, ctx) {
         </section>
       </div>`;
 
-    el.querySelector('#jour').onchange = (e) => { jour = e.target.value || isoJour(); dessiner(); };
+    brancherFile();
+    el.querySelector('#jour').onchange = (e) => { jour = e.target.value || isoJour(); rafraichir(); };
     el.querySelectorAll('[data-annuler]').forEach((b) => b.onclick = () => annuler(ventes.find((v) => v.id === Number(b.dataset.annuler))));
     el.querySelectorAll('[data-reimp]').forEach((b) => b.onclick = () => {
       const v = ventes.find((x) => x.id === Number(b.dataset.reimp));
@@ -114,7 +165,7 @@ export async function render(el, ctx) {
           const r = await rpc(sb, 'fermer_caisse', { p_especes_comptees: n });
           toast('Caisse fermée. Écart : ' + fmtF(r.ecart), Number(r.ecart) === 0 ? 'ok' : 'warn');
           ctx.majCaisse();
-          dessiner();
+          rafraichir();
         } catch (e) { erreur(e); }
       };
     }
@@ -124,7 +175,7 @@ export async function render(el, ctx) {
         await rpc(sb, 'ouvrir_caisse', { p_fond: entier(el.querySelector('#fond').value) || 0 });
         toast('Caisse ouverte.');
         ctx.majCaisse();
-        dessiner();
+        rafraichir();
       } catch (e) { erreur(e); }
     };
   }
@@ -139,7 +190,7 @@ export async function render(el, ctx) {
         await rpc(sb, 'annuler_vente', { p_vente_id: v.id, p_motif: m.el.querySelector('#motif').value });
         toast('Vente annulée, stock remis.');
         m.fermer();
-        dessiner();
+        rafraichir();
       } catch (e) { erreur(e); }
     };
   }
