@@ -55,6 +55,10 @@ Les fichiers SQL sont dans `supabase/migrations/`, à appliquer dans l'ordre :
 | `004_identifiants_et_responsable.sql` | Connexion par identifiant, rôle responsable, droits par rôle. |
 | `005_inventaire_commandes_hors_ligne.sql` | Inventaire, commandes au district, ventes hors ligne sans doublon, verrou après fermeture de caisse, mot de passe provisoire, journal des prix, index de performance. |
 
+Sur la base de production, la 005 a été appliquée en deux temps (le 28/10/2026) : la première moitié depuis l'éditeur
+SQL, puis la fin avec `supabase/production/005_suite.sql` (même contenu, relançable sans risque). Pour une base neuve,
+appliquer simplement les fichiers de `supabase/migrations/` dans l'ordre.
+
 Le site connaît la version de base qu'il attend (`VERSION_BASE` dans `js/version.js`) : si la base est en retard,
 le gérant voit un bandeau rouge.
 

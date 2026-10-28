@@ -441,9 +441,9 @@ begin
     if not found then
       raise exception 'Lot introuvable : rechargez la page d''inventaire.';
     end if;
-    if v_c ? 'attendu' and (v_c ->> 'attendu')::int is distinct from v_lot.quantite then
-      v_bouge := v_bouge || (select designation from produits where id = v_lot.produit_id)
-        || case when v_lot.numero <> '' then ' (lot ' || v_lot.numero || ')' else '' end;
+    if (v_c -> 'attendu') is not null and (v_c ->> 'attendu')::int is distinct from v_lot.quantite then
+      v_bouge := array_append(v_bouge, (select designation from produits where id = v_lot.produit_id)
+        || case when v_lot.numero <> '' then ' (lot ' || v_lot.numero || ')' else '' end);
     end if;
   end loop;
   if cardinality(v_bouge) > 0 then

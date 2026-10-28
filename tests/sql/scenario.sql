@@ -183,7 +183,7 @@ do $$ declare r jsonb; begin
   -- lot TARD : 10 − 1 (vente FEFO) − 1 (hors ligne) − 3 (crédit) + 1 (annulation) = 6
   assert (select quantite from lots where id = pg_temp.v('lot_tard')) = 6, 'lot TARD = 6 avant inventaire';
   -- la feuille affichait 7 : une vente est passée entre-temps → refus, rien n'est écrit
-  perform pg_temp.refus(format($q$select valider_inventaire('{"comptes":[{"lot_id":%s,"reel":4,"attendu":7}]}')$q$, pg_temp.v('lot_tard')), 'a bougé');
+  perform pg_temp.refus(format($q$select valider_inventaire('{"comptes":[{"lot_id":%s,"reel":4,"attendu":7}]}')$q$, pg_temp.v('lot_tard')), 'a bougé pendant l''inventaire pour : ZZ TEST AMOXICILLINE (lot TARD). Vérifiez');
   assert (select quantite from lots where id = pg_temp.v('lot_tard')) = 6, 'refus : lot inchangé';
   r := valider_inventaire(jsonb_build_object('reference', 'Inventaire test',
     'comptes', jsonb_build_array(jsonb_build_object('lot_id', pg_temp.v('lot_tard'), 'reel', 5, 'attendu', 6),
