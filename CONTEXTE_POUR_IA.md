@@ -1,7 +1,7 @@
 # Pharmacie Simple — dossier de passation (contexte pour une IA ou un développeur)
 
 > À lire EN ENTIER avant de modifier le code. Il complète le README (qui s'adresse à l'utilisatrice).
-> Version applicative : **1.5.0** · cache du service worker : **pharmacie-simple-v6** · base attendue : **8**
+> Version applicative : **1.6.0** · cache du service worker : **pharmacie-simple-v7** · base attendue : **9**
 
 ## 1. Vue d'ensemble
 
@@ -77,6 +77,12 @@
   personne et par heure, gardées 6 mois), marquées vues par `marquer_erreurs_vues(ids)` (`null` = toutes). Côté site,
   `erreur()` appelle `rapporter()` (util.js) ; le rapporteur posé par `app.js` ignore les coupures réseau et n'envoie
   la même erreur (page + message) qu'une fois par minute.
+- Bénéfices et stock valorisé : RPC `benefices(debut, fin)` et `stock_valeurs(debut, fin)` (droit `rapports`, une seule valeur JSON
+  pour échapper à la limite de 1000 lignes). Bénéfice = Vente seulement (`quantite × (prix_unitaire − cout_unitaire)` des lignes de
+  ventes non annulées et non gratuites) ; pertes = `perime` et `correction` négatives au prix d'achat ; PHPSP exclu (argent à reverser).
+  Prix d'un produit pour un programme = `produits_programmes.prix_vente` sinon `produits.prix_vente` (pour un programme gratuit
+  c'est la « valeur » d'une unité, jamais un prix de vente). Écrans : vues `benefices` et `stock` de `js/pages/point.js` ; colonnes
+  Prix et Valeur de `stock.js` visibles seulement avec le droit `rapports`.
 - `anomalies()` (gérant) : contrôle calculé à la demande, jamais stocké — `code`, `gravite` (haute / moyenne / info),
   `titre`, `detail` qui **commence par le nom du produit** (« SALBUTAMOL AMP INJ — Vente »), `page` où corriger, `cle`.
   Page « Erreurs » (`js/pages/erreurs.js`) ; pastille rouge sur l'onglet = anomalies non « info » + erreurs non vues.

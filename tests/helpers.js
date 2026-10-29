@@ -89,7 +89,7 @@ function donneesDeBase() {
       { cle: 'droits_responsable', valeur: { vendre: true, entree: true, credit: true, programmes: true, corriger: true, annuler: true, prix: false, rapports: true, base: false } },
       { cle: 'pharmacie', valeur: { nom: 'Pharmacie Test', region: 'SUD COMOÉ', district: 'GRAND-BASSAM', etablissement: 'CSR TEST' } },
       { cle: 'derniere_sauvegarde', valeur: { date: new Date().toISOString(), par: 'Gérante Test' } },
-      { cle: 'version_base', valeur: { version: 8 } }
+      { cle: 'version_base', valeur: { version: 9 } }
     ],
     programmes, produits, lots, produits_programmes: liens,
     clients: [{ id: 1, nom: 'TRAORE Adama', telephone: '0700000001', plafond: 10000 }],
@@ -226,6 +226,53 @@ function rpcParDefaut(db, etat) {
         code: 'perime_en_stock', gravite: 'haute', titre: 'Lot périmé encore en stock',
         detail: db.produits.find((x) => x.id === l.produit_id).designation + ' — ' + l.quantite + ' unité(s), lot ' + l.numero, page: 'inventaire', cle: 'perime:' + l.id }));
       return [...prix, ...perimes];
+    },
+    // Comme benefices() côté serveur : la Vente seulement, gratuit et annulées exclus, pertes au prix d'achat
+    benefices: (a) => {
+      if (!['gerant', 'responsable'].includes(etat.utilisateur?.role)) throw new Error('Action non autorisée (rapports).');
+      if (!(a.p_fin > a.p_debut)) throw new Error('Période invalide.');
+      const vente = db.programmes.find((g) => g.est_vente).id;
+      const dans = (iso) => iso.slice(0, 10) >= a.p_debut && iso.slice(0, 10) < a.p_fin;
+      const jours = new Map(), produits = new Map(), pertes = new Map();
+      for (const v of db.ventes.filter((x) => x.programme_id === vente && !x.annulee && x.mode_paiement !== 'gratuit' && dans(x.created_at))) {
+        const j = jours.get(v.created_at.slice(0, 10)) || { ca: 0, cout: 0, credit: 0, nb: 0 };
+        j.nb++;
+        for (const l of v.ventes_lignes) {
+          const ca = l.quantite * l.prix_unitaire, cout = l.quantite * l.cout_unitaire;
+          j.ca += ca; j.cout += cout; if (v.mode_paiement === 'credit') j.credit += ca;
+          const p = produits.get(l.produit_id) || { produit_id: l.produit_id, designation: db.produits.find((x) => x.id === l.produit_id).designation, quantite: 0, ca: 0, cout: 0, sans_achat: false };
+          p.quantite += l.quantite; p.ca += ca; p.cout += cout; if (!Number(l.cout_unitaire)) p.sans_achat = true;
+          produits.set(l.produit_id, p);
+        }
+        jours.set(v.created_at.slice(0, 10), j);
+      }
+      for (const m of db.mouvements.filter((x) => x.programme_id === vente && ['perime', 'correction'].includes(x.type) && x.quantite < 0 && dans(x.created_at))) {
+        const jr = m.created_at.slice(0, 10), pr = pertes.get(jr) || { unites: 0, valeur: 0 };
+        pr.unites -= m.quantite; pr.valeur -= m.quantite * Number(db.produits.find((x) => x.id === m.produit_id).prix_achat);
+        pertes.set(jr, pr);
+      }
+      return {
+        jours: [...jours].sort().map(([jour, j]) => ({ jour, ...j })),
+        pertes: [...pertes].sort().map(([jour, x]) => ({ jour, ...x })),
+        produits: [...produits.values()].sort((x, y) => (y.ca - y.cout) - (x.ca - x.cout))
+      };
+    },
+    // Comme stock_valeurs() : début, entrées, sorties, pertes et reste d'après les mouvements, au prix de l'origine
+    stock_valeurs: (a) => {
+      if (!['gerant', 'responsable'].includes(etat.utilisateur?.role)) throw new Error('Action non autorisée (rapports).');
+      const jour = (m) => m.created_at.slice(0, 10);
+      return db.produits_programmes.filter((l) => db.produits.find((p) => p.id === l.produit_id)?.actif && db.programmes.find((g) => g.id === l.programme_id)?.actif).map((l) => {
+        const p = db.produits.find((x) => x.id === l.produit_id);
+        const ms = db.mouvements.filter((m) => m.produit_id === l.produit_id && m.programme_id === l.programme_id);
+        const somme = (f, pred) => ms.filter((m) => f(jour(m)) && pred(m)).reduce((s, m) => s + m.quantite, 0);
+        const dansP = (j) => j >= a.p_debut && j < a.p_fin;
+        return { programme_id: l.programme_id, produit_id: l.produit_id, designation: p.designation, prix: l.prix_vente ?? p.prix_vente, prix_achat: p.prix_achat,
+          debut: somme((j) => j < a.p_debut, () => true),
+          entrees: somme(dansP, (m) => m.type === 'entree'),
+          sorties: -somme(dansP, (m) => ['vente', 'distribution', 'annulation'].includes(m.type)),
+          pertes: -somme(dansP, (m) => ['perime', 'correction'].includes(m.type)),
+          fin: somme((j) => j < a.p_fin, () => true) };
+      }).sort((x, y) => x.programme_id - y.programme_id || x.designation.localeCompare(y.designation));
     },
     signaler_erreur: (a) => {
       const u = etat.utilisateur;
