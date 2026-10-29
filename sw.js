@@ -9,8 +9,8 @@
    (tests/deploiement.test.js vérifie que les trois concordent).
    ============================================================ */
 
-const APP_VERSION = '1.4.0';
-const CACHE = 'pharmacie-simple-v5';
+const APP_VERSION = '1.5.0';
+const CACHE = 'pharmacie-simple-v6';
 const v = (url) => url + '?v=' + APP_VERSION;
 const famille = (nom) => nom.replace(/[\d.]+$/, '');
 
@@ -37,7 +37,8 @@ const PRECACHE = [
   './js/pages/point.js',
   './js/pages/rapport.js',
   './js/pages/base.js',
-  './js/pages/reglages.js'
+  './js/pages/reglages.js',
+  './js/pages/erreurs.js'
 ];
 
 self.addEventListener('install', (e) => {

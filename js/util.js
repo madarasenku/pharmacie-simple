@@ -147,11 +147,20 @@ export function toast(message, type = 'ok') {
   box.appendChild(el);
   setTimeout(() => el.remove(), type === 'err' ? 7000 : 3500);
 }
+// Journal des erreurs du gérant : app.js branche ici l'envoi au serveur (pas d'import circulaire)
+let rapporteur = null;
+export const definirRapporteur = (fn) => { rapporteur = fn; };
+export function rapporter(e, details = {}) {
+  if (!rapporteur || estErreurReseau(e)) return; // une coupure d'internet n'est pas une erreur à corriger
+  try { rapporteur(e, details); } catch (_) { /* le journal ne doit jamais casser l'écran */ }
+}
+
 export const erreur = (e) => {
   // Bug de programmation → console.error (les tests automatiques le détectent) ; refus du serveur ou réseau → simple avertissement
   if (e instanceof TypeError && !estErreurReseau(e) || e instanceof ReferenceError || e instanceof SyntaxError) console.error(e);
   else console.warn(e);
   toast(messageErreur(e), 'err');
+  rapporter(e);
 };
 
 // Fenêtre modale. contenu = HTML ; renvoie { el, fermer }. auFermer : appelé une fois, quelle que soit la façon de fermer.

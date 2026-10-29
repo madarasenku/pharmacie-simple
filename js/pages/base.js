@@ -3,7 +3,9 @@ import { esc, fmt, q, qMaj, rpc, tout, erreur, toast, modal, correspond, entier,
 
 export async function render(el, ctx) {
   const { sb } = ctx;
-  let recherche = '';
+  // Ouverte depuis le journal des erreurs (#/base?rech=NOM) : on filtre directement sur le produit
+  let recherche = new URLSearchParams(location.hash.split('?')[1] || '').get('rech') || '';
+  let seulementSansPrix = false;
   let voirInactifs = false;
   let produits = [];
   let liens = new Set();
@@ -25,8 +27,12 @@ export async function render(el, ctx) {
 
   function dessiner() {
     const progs = ctx.programmes;
-    const liste = produits.filter((p) => (voirInactifs || p.actif) && correspond(p, recherche));
-    const sansPrix = produits.filter((p) => p.actif && liens.has(p.id + ':' + ctx.vente?.id) && !Number(p.prix_vente)).length;
+    // Produits à vendre (Vente ou programme recouvrable) dont le prix est 0 : on les nomme
+    const payants = progs.filter((g) => g.actif && (g.est_vente || g.recouvrable));
+    const prixDOrigine = (p, g) => (prixOrigine.has(p.id + ':' + g.id) ? prixOrigine.get(p.id + ':' + g.id) : Number(p.prix_vente));
+    const sansPrixListe = produits.filter((p) => p.actif && payants.some((g) => liens.has(p.id + ':' + g.id) && !prixDOrigine(p, g)));
+    const sansPrix = sansPrixListe.length;
+    const liste = produits.filter((p) => (voirInactifs || p.actif) && correspond(p, recherche) && (!seulementSansPrix || sansPrixListe.includes(p)));
 
     el.innerHTML = `
       <div class="page-head"><div><h1>Base : programmes et produits</h1>
@@ -49,7 +55,9 @@ export async function render(el, ctx) {
 
       <section class="card">
         <div class="card-head">
-          <div><h2>Produits (${liste.length})</h2>${sansPrix ? `<div class="small" style="color:var(--orange)">${sansPrix} produit(s) vendus sans prix de vente</div>` : ''}</div>
+          <div><h2>Produits (${liste.length})</h2>${sansPrix ? `<div class="small" style="color:var(--orange)">${sansPrix === 1 ? '1 produit à vendre n’a pas de prix de vente' : sansPrix + ' produits à vendre n’ont pas de prix de vente'} :
+            <strong>${sansPrixListe.slice(0, 5).map((p) => esc(p.designation)).join(', ')}${sansPrix > 5 ? '…' : ''}</strong>
+            <button class="link small" id="sans-prix">${seulementSansPrix ? 'Afficher tous les produits' : 'Afficher seulement ceux-là'}</button></div>` : ''}</div>
           <div class="inline">
             <label class="sr" for="rech">Chercher</label><input class="in" id="rech" type="search" placeholder="Chercher un produit" value="${esc(recherche)}" style="max-width:280px">
             <label class="check small"><input type="checkbox" id="inactifs" ${voirInactifs ? 'checked' : ''}> Inactifs</label>
@@ -87,6 +95,8 @@ export async function render(el, ctx) {
       n.setSelectionRange(pos, pos);
     };
     el.querySelector('#inactifs').onchange = (e) => { voirInactifs = e.target.checked; dessiner(); };
+    const sp = el.querySelector('#sans-prix');
+    if (sp) sp.onclick = () => { seulementSansPrix = !seulementSansPrix; dessiner(); };
     el.querySelector('#nv-prog').onclick = () => ficheProgramme(null);
     el.querySelector('#nv-prod').onclick = () => ficheProduit(null);
     el.querySelectorAll('[data-prog]').forEach((b) => b.onclick = () => ficheProgramme(ctx.programmes.find((g) => g.id === Number(b.dataset.prog))));

@@ -4,7 +4,7 @@ const { ouvrir, aller, lancerTest } = require('./helpers');
 
 // Ordre des onglets : vendre · stock · suivi · gestion
 const MENUS = {
-  gerant: ['comptoir', 'journee', 'credits', 'entree', 'stock', 'inventaire', 'programmes', 'point', 'rapport', 'base', 'reglages'],
+  gerant: ['comptoir', 'journee', 'credits', 'entree', 'stock', 'inventaire', 'programmes', 'point', 'rapport', 'base', 'reglages', 'erreurs'],
   responsable: ['comptoir', 'journee', 'credits', 'entree', 'stock', 'inventaire', 'programmes', 'point', 'rapport'],
   vendeur: ['comptoir', 'journee', 'credits', 'stock', 'programmes']
 };

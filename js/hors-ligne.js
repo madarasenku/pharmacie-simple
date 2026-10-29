@@ -1,7 +1,7 @@
 // Ventes faites sans internet : gardées sur l'appareil, puis envoyées dès que le réseau revient.
 // Chaque vente porte un identifiant unique (ref_client) : si elle est envoyée deux fois
 // (coupure au mauvais moment, double clic), le serveur ne l'enregistre qu'une seule fois.
-import { local, rpc, estErreurReseau, messageErreur } from './util.js';
+import { local, rpc, estErreurReseau, messageErreur, rapporter } from './util.js';
 
 const CLE = 'file_ventes';
 const abonnes = new Set();
@@ -55,6 +55,7 @@ export async function synchroniser(sb, utilisateur) {
         const msg = messageErreur(e);
         if (PASSAGER.test(msg)) { maj(item.ref, { erreur: msg }); break; }
         maj(item.ref, { etat: 'erreur', erreur: msg });
+        rapporter(e, { quoi: 'vente hors ligne refusée', numero: item.resume?.numero, articles: item.resume?.articles });
       }
     }
   } finally {
