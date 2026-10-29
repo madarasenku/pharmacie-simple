@@ -270,7 +270,7 @@ do $$ begin
   assert (select details ->> 'apres' from journal where action = 'prix' order by id desc limit 1) = '125.00', 'changement de prix journalisé';
   perform enregistrer_entree(jsonb_build_object('produit_id', pg_temp.v('amox'), 'programme_id', pg_temp.v('vente'), 'quantite', 1, 'prix_vente', 130));
   assert (select count(*) from journal where action = 'prix') = 2, 'prix changé à l''entrée : une seule ligne de journal de plus';
-  assert (select (valeur ->> 'version')::int from parametres where cle = 'version_base') = 9, 'version de la base';
+  assert (select (valeur ->> 'version')::int from parametres where cle = 'version_base') = 10, 'version de la base';
 end $$;
 select pg_temp.qui('awa');
 do $$ declare n int; begin
@@ -459,17 +459,23 @@ begin
   assert not exists (select 1 from jsonb_array_elements(stock_valeurs(current_date, current_date + 1)) x
     where (x ->> 'debut')::int + (x ->> 'entrees')::int - (x ->> 'sorties')::int - (x ->> 'pertes')::int <> (x ->> 'fin')::int), 'équation du stock';
   perform pg_temp.refus('select benefices(current_date + 1, current_date)', 'Période invalide');
+  -- Par programme : la Vente donne la même chose qu'avant ; un programme gratuit n'a jamais de bénéfice
+  assert benefices(current_date, current_date + 1, pg_temp.v('vente')) = benefices(current_date, current_date + 1), 'benefices(…, Vente) = ancienne forme';
+  assert jsonb_array_length(benefices(current_date, current_date + 1, pg_temp.v('pnlp')) -> 'jours') = 0, 'PNLP (gratuit) : aucun bénéfice';
+  perform pg_temp.refus('select benefices(current_date, current_date + 1, -1)', 'Programme inconnu');
   perform fermer_caisse(0);
 end $$;
 select pg_temp.qui('kone');
 do $$ begin
   assert jsonb_typeof(benefices(current_date, current_date + 1)) = 'object', 'le responsable voit les bénéfices';
+  assert jsonb_typeof(benefices(current_date, current_date + 1, pg_temp.v('vente'))) = 'object', 'le responsable voit les bénéfices par programme';
   assert jsonb_typeof(stock_valeurs(current_date, current_date + 1)) = 'array', 'le responsable voit le stock valorisé';
 end $$;
 select pg_temp.qui('awa');
 do $$ begin
   perform pg_temp.refus('select benefices(current_date, current_date + 1)', 'non autorisée');
   perform pg_temp.refus('select stock_valeurs(current_date, current_date + 1)', 'non autorisée');
+  perform pg_temp.refus('select benefices(current_date, current_date + 1, 1)', 'non autorisée');
 end $$;
 
 -- ---------- 14. Mot de passe temporaire ----------

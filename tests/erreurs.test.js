@@ -11,7 +11,7 @@ lancerTest('ERREURS — produit vendu sans prix : son nom, et la Base filtrée d
     donnees: (db) => {
       db.produits.find((p) => p.id === 4).prix_vente = 0; // SRO SACHET, coché Vente, sans prix
       db.erreurs.push({ id: 1, created_at: new Date().toISOString(), user_id: UTILISATEURS.vendeur.id, profiles: { nom: 'AWA VENDEUSE' },
-        page: 'comptoir', message: 'Stock insuffisant pour SRO SACHET (2 manquant(s)).', details: {}, version: '1.6.0', appareil: 'Test', vu: false });
+        page: 'comptoir', message: 'Stock insuffisant pour SRO SACHET (2 manquant(s)).', details: {}, version: '1.7.0', appareil: 'Test', vu: false });
     }
   });
   try {
@@ -92,7 +92,7 @@ lancerTest('ERREURS — une erreur affichée à un agent part dans le journal du
     for (let i = 0; i < 50 && !db.erreurs.length; i++) await page.waitForTimeout(50);
     const e = db.erreurs[0] || {};
     r.check('erreur enregistrée : page, message, qui', [e.page, e.message, e.user_id], ['comptoir', 'Stock insuffisant pour PARACETAMOL 500 MG CP (2 manquant(s)).', UTILISATEURS.vendeur.id]);
-    r.ok('avec la version de l’application et l’appareil', e.version === '1.6.0' && /Chrome/.test(e.appareil || ''), JSON.stringify(e));
+    r.ok('avec la version de l’application et l’appareil', e.version === '1.7.0' && /Chrome/.test(e.appareil || ''), JSON.stringify(e));
     // La même erreur répétée tout de suite n'est envoyée qu'une fois
     await page.click('#valider');
     await page.waitForTimeout(300);
