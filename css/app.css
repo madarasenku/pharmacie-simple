@@ -312,3 +312,7 @@ details.patient summary { min-height: 48px; display: flex; align-items: center; 
   nav.menu .sep { margin: 14px 2px; }
   nav.menu .version { display: none; }
 }
+
+/* ---------- Bénéfices : petite barre de comparaison ---------- */
+.barre { background: #E8F0EC; border-radius: 4px; height: 10px; min-width: 90px; overflow: hidden; }
+.barre i { display: block; height: 100%; background: var(--vert); border-radius: 4px; }

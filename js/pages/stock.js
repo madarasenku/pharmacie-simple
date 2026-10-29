@@ -1,5 +1,5 @@
 // Mon stock : stock par origine, alertes, lots, corrections et historique.
-import { esc, fmt, fmtPeremption, fmtDateHeure, q, rpc, erreur, toast, modal, chargerCatalogue, correspond, entier, csv, telecharger, isoJour, joursAvant, local } from '../util.js';
+import { esc, fmt, fmtPeremption, fmtDateHeure, q, rpc, erreur, toast, modal, chargerCatalogue, correspond, entier, csv, telecharger, isoJour, joursAvant, local, prixDe } from '../util.js';
 
 const TYPES = { entree: 'Entrée', vente: 'Vente', distribution: 'Distribution', correction: 'Correction', perime: 'Périmé', annulation: 'Annulation' };
 
@@ -45,6 +45,10 @@ export async function render(el, ctx) {
     };
   }
 
+  // Prix et valeur du stock : pour ceux qui voient les rapports (gérant, responsable), pas pour les agents
+  const voirValeurs = ctx.peut('rapports');
+  const valeurDe = (p) => visibles().reduce((s, o) => s + (p.origines[o.id] ? p.origines[o.id].quantite * prixDe(p, o.id) : 0), 0);
+
   function dessiner() {
     const cols = visibles();
     const enVue = catalogue.filter((p) => p.actif && cols.some((o) => p.origines[o.id]));
@@ -54,6 +58,8 @@ export async function render(el, ctx) {
       .filter((x) => filtre === 'tout' || x.e.cle === filtre || (filtre === 'bas' && x.e.cle === 'rupture'))
       .filter((x) => correspond(x.p, recherche));
     const plusieurs = cols.length > 1;
+    const valeurTotale = liste.reduce((s, { p }) => s + valeurDe(p), 0);
+    const nbCols = (plusieurs ? cols.length + 1 : 1) + 4 + (voirValeurs ? (plusieurs ? 1 : 2) : 0);
 
     const montrerCommande = vente && (vue === 'tout' || vue === vente.id);
     const aCommander = montrerCommande ? catalogue.filter((p) => p.actif && p.origines[vente.id]).map((p) => {
@@ -84,14 +90,15 @@ export async function render(el, ctx) {
         </div>
       </div>
       <div class="card"><div class="table-box"><table class="tbl">
-        <thead><tr><th>Produit</th>${plusieurs ? cols.map((o) => `<th class="r ${o.est_vente ? '' : 'prog-col'}">${esc(o.est_vente ? 'Vente' : o.sigle)}</th>`).join('') + '<th class="r">Total</th>' : `<th class="r">Stock ${esc(nom(vue))}</th>`}<th class="r">Conso / mois</th><th>Péremption</th><th>État</th></tr></thead>
+        <thead><tr><th>Produit</th>${plusieurs ? cols.map((o) => `<th class="r ${o.est_vente ? '' : 'prog-col'}">${esc(o.est_vente ? 'Vente' : o.sigle)}</th>`).join('') + '<th class="r">Total</th>' : `<th class="r">Stock ${esc(nom(vue))}</th>`}${voirValeurs ? (plusieurs ? '' : `<th class="r">Prix ${esc(nom(vue))}</th>`) + '<th class="r">Valeur (F)</th>' : ''}<th class="r">Conso / mois</th><th>Péremption</th><th>État</th></tr></thead>
         <tbody>${liste.map(({ p, e }) => {
           const c = chiffres(p);
           return `<tr class="clic" data-produit="${p.id}"><td>${esc(p.designation)}</td>
             ${plusieurs ? cols.map((o) => `<td class="num r ${o.est_vente ? '' : 'prog-col'}" style="${o.est_vente ? 'font-weight:600' : ''}">${p.origines[o.id] ? fmt(p.origines[o.id].quantite) : '—'}</td>`).join('') : ''}
-            <td class="num r" style="font-weight:700">${fmt(c.total)}</td><td class="num r muted">${c.cmm ? c.cmm.toFixed(1).replace('.', ',') : '—'}</td>
+            <td class="num r" style="font-weight:700">${fmt(c.total)}</td>${voirValeurs ? (plusieurs ? '' : `<td class="num r">${fmt(prixDe(p, vue))}</td>`) + `<td class="num r">${fmt(valeurDe(p))}</td>` : ''}<td class="num r muted">${c.cmm ? c.cmm.toFixed(1).replace('.', ',') : '—'}</td>
             <td class="num">${fmtPeremption(c.prochaine)}</td><td><span class="badge ${e.badge}">${esc(e.texte)}</span></td></tr>`;
-        }).join('') || `<tr><td colspan="${(plusieurs ? cols.length + 1 : 1) + 4}" class="muted">Aucun produit${vue === 'tout' ? '' : ' rattaché à ' + esc(nom(vue))}.</td></tr>`}</tbody>
+        }).join('') || `<tr><td colspan="${nbCols}" class="muted">Aucun produit${vue === 'tout' ? '' : ' rattaché à ' + esc(nom(vue))}.</td></tr>`}
+          ${voirValeurs && liste.length ? `<tr><td colspan="${(plusieurs ? cols.length + 1 : 1) + (plusieurs ? 0 : 1) + 1}" style="text-align:right;font-weight:700">VALEUR DU STOCK AFFICHÉ${filtre === 'tout' && !recherche ? '' : ' (liste filtrée)'}</td><td class="num r" style="font-weight:700">${fmt(valeurTotale)}</td><td colspan="3"></td></tr>` : ''}</tbody>
       </table></div></div>
 
       <div class="row">
@@ -125,10 +132,10 @@ export async function render(el, ctx) {
     };
     el.querySelectorAll('[data-produit]').forEach((tr) => tr.onclick = () => detail(catalogue.find((p) => p.id === Number(tr.dataset.produit))).catch(erreur));
     el.querySelector('#export').onclick = () => {
-      const lignes = [['Produit', ...(plusieurs ? [...cols.map((o) => (o.est_vente ? 'Vente' : o.sigle)), 'Total'] : ['Stock ' + nom(vue)]), 'Conso/mois', 'Péremption', 'État']];
+      const lignes = [['Produit', ...(plusieurs ? [...cols.map((o) => (o.est_vente ? 'Vente' : o.sigle)), 'Total'] : ['Stock ' + nom(vue)]), ...(voirValeurs ? [...(plusieurs ? [] : ['Prix ' + nom(vue)]), 'Valeur'] : []), 'Conso/mois', 'Péremption', 'État']];
       for (const { p, e } of liste) {
         const c = chiffres(p);
-        lignes.push([p.designation, ...(plusieurs ? cols.map((o) => p.origines[o.id]?.quantite ?? '') : []), c.total, c.cmm, fmtPeremption(c.prochaine), e.texte]);
+        lignes.push([p.designation, ...(plusieurs ? cols.map((o) => p.origines[o.id]?.quantite ?? '') : []), c.total, ...(voirValeurs ? [...(plusieurs ? [] : [prixDe(p, vue)]), valeurDe(p)] : []), c.cmm, fmtPeremption(c.prochaine), e.texte]);
       }
       telecharger('stock-' + (vue === 'tout' ? 'tout' : nom(vue)) + '-' + isoJour() + '.csv', csv(lignes));
     };

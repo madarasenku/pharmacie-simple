@@ -68,7 +68,9 @@ export async function render(el, ctx) {
         </div>
         <div class="small muted" style="padding:8px 18px">Les prix et le minimum se modifient directement dans le tableau (enregistrement automatique).</div>
         <div class="table-box"><table class="tbl">
-          <thead><tr><th style="width:36px"><input type="checkbox" class="case" id="tout-choisir" aria-label="Choisir tous les produits affichés"></th><th>Produit</th><th>Code-barres</th><th class="r">Prix achat</th><th class="r">Prix vente</th>${progs.filter((g) => g.recouvrable).map((g) => `<th class="r" style="color:var(--bleu)" title="Prix de vente ${esc(g.nom)} (vide = prix de vente normal)">Prix ${esc(g.sigle)}</th>`).join('')}<th class="r">Min.</th>
+          <thead><tr><th style="width:36px"><input type="checkbox" class="case" id="tout-choisir" aria-label="Choisir tous les produits affichés"></th><th>Produit</th><th>Code-barres</th><th class="r">Prix achat</th><th class="r">Prix vente</th>${progs.filter((g) => !g.est_vente && g.actif).map((g) => (g.recouvrable
+              ? `<th class="r" style="color:var(--bleu)" title="Prix de vente ${esc(g.nom)} (vide = prix de vente normal)">Prix ${esc(g.sigle)}</th>`
+              : `<th class="r" style="color:var(--violet)" title="Valeur d’une unité ${esc(g.nom)}, pour le stock et les points du programme : rien n’est vendu (vide = prix de vente normal)">Valeur ${esc(g.sigle)}</th>`)).join('')}<th class="r">Min.</th>
             ${progs.map((g) => `<th class="${g.est_vente ? '' : 'prog-col'}" style="text-align:center" title="${esc(g.nom)}">${esc(g.est_vente ? 'Vente' : g.sigle)}</th>`).join('')}<th></th></tr></thead>
           <tbody>${liste.map((p) => `<tr style="${p.actif ? '' : 'opacity:.55'}">
             <td><input type="checkbox" class="case" data-choix-prod="${p.id}" ${choixProduits.has(p.id) ? 'checked' : ''} aria-label="Choisir ${esc(p.designation)}"></td>
@@ -76,8 +78,8 @@ export async function render(el, ctx) {
             <td class="num small">${esc(p.code_barres || '—')}</td>
             <td class="r"><input class="in num r" style="width:90px" data-champ="prix_achat" data-id="${p.id}" value="${Number(p.prix_achat)}" aria-label="Prix d'achat ${esc(p.designation)}"></td>
             <td class="r"><input class="in num r" style="width:90px;${Number(p.prix_vente) ? '' : 'background:#FFF0CC'}" data-champ="prix_vente" data-id="${p.id}" value="${Number(p.prix_vente)}" aria-label="Prix de vente ${esc(p.designation)}"></td>
-            ${progs.filter((g) => g.recouvrable).map((g) => liens.has(p.id + ':' + g.id)
-              ? `<td class="r"><input class="in num r" style="width:90px" data-prix-origine="${p.id}:${g.id}" value="${prixOrigine.has(p.id + ':' + g.id) ? prixOrigine.get(p.id + ':' + g.id) : ''}" placeholder="${Number(p.prix_vente)}" aria-label="Prix ${esc(g.sigle)} ${esc(p.designation)}"></td>`
+            ${progs.filter((g) => !g.est_vente && g.actif).map((g) => liens.has(p.id + ':' + g.id)
+              ? `<td class="r"><input class="in num r" style="width:90px" data-prix-origine="${p.id}:${g.id}" value="${prixOrigine.has(p.id + ':' + g.id) ? prixOrigine.get(p.id + ':' + g.id) : ''}" placeholder="${Number(p.prix_vente)}" aria-label="${g.recouvrable ? 'Prix' : 'Valeur'} ${esc(g.sigle)} ${esc(p.designation)}"></td>`
               : '<td class="r muted">—</td>').join('')}
             <td class="r"><input class="in num r" style="width:70px" data-champ="stock_min" data-id="${p.id}" value="${p.stock_min}" aria-label="Stock minimum ${esc(p.designation)}"></td>
             ${progs.map((g) => `<td style="text-align:center"><input type="checkbox" style="width:22px;height:22px;accent-color:${g.est_vente ? 'var(--vert)' : 'var(--violet)'}" data-lien="${p.id}:${g.id}" ${liens.has(p.id + ':' + g.id) ? 'checked' : ''} aria-label="${esc(p.designation)} : ${esc(g.nom)}"></td>`).join('')}
@@ -114,7 +116,7 @@ export async function render(el, ctx) {
         setTimeout(() => { if (i.isConnected && !(champ === 'prix_vente' && !v)) i.style.background = ''; }, 900);
       } catch (e) { erreur(e); }
     });
-    // Prix propre à un programme recouvrable (vide = on revient au prix de vente normal)
+    // Prix propre à un programme (recouvrable : prix de vente ; gratuit : valeur d'une unité) (vide = on revient au prix de vente normal)
     el.querySelectorAll('[data-prix-origine]').forEach((i) => i.onchange = async () => {
       const [produit_id, programme_id] = i.dataset.prixOrigine.split(':').map(Number);
       const v = i.value.trim() === '' ? null : nombre(i.value);

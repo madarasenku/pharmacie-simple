@@ -270,7 +270,7 @@ do $$ begin
   assert (select details ->> 'apres' from journal where action = 'prix' order by id desc limit 1) = '125.00', 'changement de prix journalisé';
   perform enregistrer_entree(jsonb_build_object('produit_id', pg_temp.v('amox'), 'programme_id', pg_temp.v('vente'), 'quantite', 1, 'prix_vente', 130));
   assert (select count(*) from journal where action = 'prix') = 2, 'prix changé à l''entrée : une seule ligne de journal de plus';
-  assert (select (valeur ->> 'version')::int from parametres where cle = 'version_base') = 8, 'version de la base';
+  assert (select (valeur ->> 'version')::int from parametres where cle = 'version_base') = 9, 'version de la base';
 end $$;
 select pg_temp.qui('awa');
 do $$ declare n int; begin
@@ -398,6 +398,78 @@ do $$ begin
   assert exists (select 1 from anomalies() where code = 'ecart_caisse' and detail like '%il manquait 500 F%'), 'écart de caisse signalé';
   assert exists (select 1 from anomalies() where code = 'sauvegarde'), 'sauvegarde à faire signalée';
   assert not exists (select 1 from anomalies() where code = 'prix_manquant' and detail like 'ZZ TEST ACT ENFANT%'), 'produit gratuit sans prix : pas une anomalie';
+end $$;
+
+-- ---------- 13b. Bénéfices et stock valorisé (gérant et responsable, pas le vendeur) ----------
+select pg_temp.qui('gerant');
+do $$ declare
+  b int; lot int; v jsonb; avant jsonb; apres jsonb; ligne jsonb; sv jsonb;
+  d numeric;
+begin
+  insert into produits (designation, prix_achat, prix_vente) values ('ZZ BENEF', 40, 100) returning id into b;
+  insert into produits_programmes (produit_id, programme_id) values (b, pg_temp.v('vente'));
+  -- prix propre au programme gratuit (valeur d'une unité du PNLP)
+  insert into produits_programmes (produit_id, programme_id, prix_vente) values (b, pg_temp.v('pnlp'), 70);
+  perform ouvrir_caisse(0);
+  perform enregistrer_entree(jsonb_build_object('produit_id', b, 'programme_id', pg_temp.v('vente'), 'quantite', 10));
+  perform enregistrer_entree(jsonb_build_object('produit_id', b, 'programme_id', pg_temp.v('pnlp'), 'quantite', 10));
+  avant := benefices(current_date, current_date + 1);
+  -- 3 vendus 100 F (achetés 40 F) = 300 F de ventes, 120 F de coût
+  perform enregistrer_vente(jsonb_build_object('programme_id', pg_temp.v('vente'), 'mode', 'especes',
+    'lignes', jsonb_build_array(jsonb_build_object('produit_id', b, 'quantite', 3))));
+  -- 4 donnés par le PNLP : ni vente ni bénéfice
+  perform enregistrer_vente(jsonb_build_object('programme_id', pg_temp.v('pnlp'), 'mode', 'gratuit',
+    'lignes', jsonb_build_array(jsonb_build_object('produit_id', b, 'quantite', 4))));
+  -- 2 unités de la Vente cassées : perte de 2 × 40 F
+  select id into lot from lots where produit_id = b and programme_id = pg_temp.v('vente');
+  perform corriger_stock(lot, 5, 'Casse / perte');
+  apres := benefices(current_date, current_date + 1);
+
+  d := (select coalesce(sum((x ->> 'ca')::numeric), 0) from jsonb_array_elements(apres -> 'jours') x)
+     - (select coalesce(sum((x ->> 'ca')::numeric), 0) from jsonb_array_elements(avant -> 'jours') x);
+  assert d = 300, 'ventes du jour : +300 F, obtenu ' || d;
+  d := (select coalesce(sum((x ->> 'cout')::numeric), 0) from jsonb_array_elements(apres -> 'jours') x)
+     - (select coalesce(sum((x ->> 'cout')::numeric), 0) from jsonb_array_elements(avant -> 'jours') x);
+  assert d = 120, 'coût d''achat du jour : +120 F, obtenu ' || d;
+  d := (select coalesce(sum((x ->> 'valeur')::numeric), 0) from jsonb_array_elements(apres -> 'pertes') x)
+     - (select coalesce(sum((x ->> 'valeur')::numeric), 0) from jsonb_array_elements(avant -> 'pertes') x);
+  assert d = 80, 'pertes : +80 F (2 unités cassées à 40 F), obtenu ' || d;
+  ligne := jsonb_path_query_first(apres, '$.produits[*] ? (@.designation == "ZZ BENEF")');
+  assert (ligne ->> 'quantite')::int = 3 and (ligne ->> 'ca')::numeric = 300 and (ligne ->> 'cout')::numeric = 120,
+    'classement des produits : ZZ BENEF 3 vendus, 300 F, coût 120 F : ' || ligne::text;
+  assert (ligne ->> 'sans_achat')::boolean is false, 'prix d''achat connu';
+  assert (select coalesce(sum((x ->> 'ca')::numeric), 0) from jsonb_array_elements(apres -> 'jours') x)
+       = (select coalesce(sum((x ->> 'ca')::numeric), 0) from jsonb_array_elements(apres -> 'produits') x), 'jours et produits donnent le même total';
+  assert not exists (select 1 from jsonb_array_elements(apres -> 'produits') x where x ->> 'designation' = 'ZZ BENEF' and (x ->> 'quantite')::int = 7),
+    'la distribution gratuite ne compte pas dans les bénéfices';
+
+  -- Stock valorisé : Vente (prix 100) et PNLP (prix propre 70)
+  sv := stock_valeurs(current_date, current_date + 1);
+  ligne := jsonb_path_query_first(sv, ('$[*] ? (@.produit_id == ' || b || ' && @.programme_id == ' || pg_temp.v('vente') || ')')::jsonpath);
+  assert (ligne ->> 'prix')::numeric = 100 and (ligne ->> 'debut')::int = 0 and (ligne ->> 'entrees')::int = 10 and (ligne ->> 'sorties')::int = 3
+     and (ligne ->> 'pertes')::int = 2 and (ligne ->> 'fin')::int = 5, 'Vente : début 0, entrées 10, sorties 3, pertes 2, reste 5 : ' || ligne::text;
+  ligne := jsonb_path_query_first(sv, ('$[*] ? (@.produit_id == ' || b || ' && @.programme_id == ' || pg_temp.v('pnlp') || ')')::jsonpath);
+  assert (ligne ->> 'prix')::numeric = 70 and (ligne ->> 'entrees')::int = 10 and (ligne ->> 'sorties')::int = 4 and (ligne ->> 'fin')::int = 6,
+    'PNLP : prix propre 70 F, entrées 10, sorties 4, reste 6 : ' || ligne::text;
+  -- Un mois passé : rien n'est encore arrivé, le stock de départ et le reste sont à zéro
+  sv := stock_valeurs(current_date - 40, current_date - 10);
+  ligne := jsonb_path_query_first(sv, ('$[*] ? (@.produit_id == ' || b || ' && @.programme_id == ' || pg_temp.v('vente') || ')')::jsonpath);
+  assert (ligne ->> 'fin')::int = 0 and (ligne ->> 'entrees')::int = 0, 'avant les mouvements, le stock reste à zéro : ' || ligne::text;
+  -- Équation : début + entrées − sorties − pertes = reste, pour toutes les lignes
+  assert not exists (select 1 from jsonb_array_elements(stock_valeurs(current_date, current_date + 1)) x
+    where (x ->> 'debut')::int + (x ->> 'entrees')::int - (x ->> 'sorties')::int - (x ->> 'pertes')::int <> (x ->> 'fin')::int), 'équation du stock';
+  perform pg_temp.refus('select benefices(current_date + 1, current_date)', 'Période invalide');
+  perform fermer_caisse(0);
+end $$;
+select pg_temp.qui('kone');
+do $$ begin
+  assert jsonb_typeof(benefices(current_date, current_date + 1)) = 'object', 'le responsable voit les bénéfices';
+  assert jsonb_typeof(stock_valeurs(current_date, current_date + 1)) = 'array', 'le responsable voit le stock valorisé';
+end $$;
+select pg_temp.qui('awa');
+do $$ begin
+  perform pg_temp.refus('select benefices(current_date, current_date + 1)', 'non autorisée');
+  perform pg_temp.refus('select stock_valeurs(current_date, current_date + 1)', 'non autorisée');
 end $$;
 
 -- ---------- 14. Mot de passe temporaire ----------
