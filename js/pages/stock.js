@@ -1,5 +1,5 @@
 // Mon stock : stock par origine, alertes, lots, corrections et historique.
-import { esc, fmt, fmtPeremption, fmtDateHeure, q, rpc, erreur, toast, modal, chargerCatalogue, correspond, entier, csv, telecharger, isoJour, joursAvant } from '../util.js';
+import { esc, fmt, fmtPeremption, fmtDateHeure, q, rpc, erreur, toast, modal, chargerCatalogue, correspond, entier, csv, telecharger, isoJour, joursAvant, local } from '../util.js';
 
 const TYPES = { entree: 'Entrée', vente: 'Vente', distribution: 'Distribution', correction: 'Correction', perime: 'Périmé', annulation: 'Annulation' };
 
@@ -10,46 +10,71 @@ export async function render(el, ctx) {
   let recherche = '';
   const origines = ctx.programmes.filter((p) => p.actif);
   const vente = ctx.vente;
+  // Origine affichée : « tout » ou un programme (choix gardé sur l'appareil, comme l'Inventaire)
+  let vue = local.lire('stock_origine', 'tout');
+  if (vue !== 'tout' && !origines.some((o) => o.id === vue)) vue = 'tout';
+  const nom = (id) => { const o = origines.find((x) => x.id === id); return o ? (o.est_vente ? 'Vente' : o.sigle) : '?'; };
+  const visibles = () => (vue === 'tout' ? origines : origines.filter((o) => o.id === vue));
 
+  // État d'un produit, calculé seulement sur les origines affichées
   function etatProduit(p) {
-    const cles = Object.keys(p.origines).map(Number);
+    const cles = visibles().map((o) => o.id).filter((id) => p.origines[id]);
     if (!cles.length) return { cle: 'aucun', texte: 'Sans origine', badge: 'b-low' };
-    const nom = (id) => { const o = origines.find((x) => x.id === id); return o ? (o.est_vente ? 'Vente' : o.sigle) : '?'; };
     // « Rupture » seulement pour un produit qui a déjà été en stock : sinon c'est un produit jamais saisi
     const ruptures = cles.filter((id) => p.origines[id].quantite <= 0 && p.origines[id].aEuDuStock);
     const jamais = cles.every((id) => p.origines[id].quantite <= 0 && !p.origines[id].aEuDuStock);
     const bas = cles.filter((id) => p.origines[id].quantite > 0 && p.origines[id].quantite < Math.max(p.stock_min, Math.ceil(p.origines[id].cmm)));
     const perimes = cles.some((id) => p.origines[id].perimee > 0);
     const bientot = cles.some((id) => { const j = joursAvant(p.origines[id].prochaine); return j !== null && j <= 90; });
-    if (ruptures.length) return { cle: 'rupture', texte: 'Rupture · ' + ruptures.map(nom).join(', '), badge: 'b-out' };
-    if (bas.length) return { cle: 'bas', texte: 'Bas · ' + bas.map(nom).join(', '), badge: 'b-low' };
+    const qui = (ids) => (vue === 'tout' ? ' · ' + ids.map(nom).join(', ') : '');
+    if (ruptures.length) return { cle: 'rupture', texte: 'Rupture' + qui(ruptures), badge: 'b-out' };
+    if (bas.length) return { cle: 'bas', texte: 'Bas' + qui(bas), badge: 'b-low' };
     if (perimes) return { cle: 'perime', texte: 'Lot périmé à retirer', badge: 'b-out' };
     if (bientot) return { cle: 'bientot', texte: 'Périme bientôt', badge: 'b-exp' };
     if (jamais) return { cle: 'jamais', texte: 'Jamais en stock', badge: 'b-neutre' };
     return { cle: 'ok', texte: 'OK', badge: 'b-ok' };
   }
 
+  // Chiffres d'un produit sur les origines affichées
+  function chiffres(p) {
+    const os = visibles().map((o) => p.origines[o.id]).filter(Boolean);
+    return {
+      total: os.reduce((s, o) => s + o.quantite, 0),
+      cmm: os.reduce((s, o) => s + o.cmm, 0),
+      prochaine: os.map((o) => o.prochaine).filter(Boolean).sort()[0] || null
+    };
+  }
+
   function dessiner() {
-    const avecEtat = catalogue.filter((p) => p.actif).map((p) => ({ p, e: etatProduit(p) }));
+    const cols = visibles();
+    const enVue = catalogue.filter((p) => p.actif && cols.some((o) => p.origines[o.id]));
+    const avecEtat = enVue.map((p) => ({ p, e: etatProduit(p) }));
     const compte = (k) => avecEtat.filter((x) => x.e.cle === k).length;
     const liste = avecEtat
       .filter((x) => filtre === 'tout' || x.e.cle === filtre || (filtre === 'bas' && x.e.cle === 'rupture'))
       .filter((x) => correspond(x.p, recherche));
+    const plusieurs = cols.length > 1;
 
-    const aCommander = vente ? catalogue.filter((p) => p.actif && p.origines[vente.id]).map((p) => {
+    const montrerCommande = vente && (vue === 'tout' || vue === vente.id);
+    const aCommander = montrerCommande ? catalogue.filter((p) => p.actif && p.origines[vente.id]).map((p) => {
       const o = p.origines[vente.id];
       return { p, o, qte: Math.max(0, Math.ceil(2 * o.cmm - o.quantite)) };
     }).filter((x) => x.o.aEuDuStock && (x.qte > 0 || x.o.quantite < x.p.stock_min)) : [];
+    const progsVus = cols.filter((x) => !x.est_vente);
     const aDemander = [];
-    for (const p of catalogue) for (const o of origines.filter((x) => !x.est_vente)) {
+    for (const p of catalogue) for (const o of progsVus) {
       const s = p.origines[o.id];
-      if (s && s.aEuDuStock && s.quantite < Math.max(p.stock_min, Math.ceil(s.cmm))) aDemander.push({ p, o, s });
+      if (p.actif && s && s.aEuDuStock && s.quantite < Math.max(p.stock_min, Math.ceil(s.cmm))) aDemander.push({ p, o, s });
     }
 
     el.innerHTML = `
       <div class="page-head"><div><h1>Mon stock</h1><div class="small muted">Le stock baisse à chaque vente ou distribution et monte à chaque entrée. Cliquez sur un produit pour voir ses lots et son historique.</div></div>
         <div class="inline"><button class="btn" id="export">Exporter Excel</button>${ctx.peut('rapports') ? '<a class="btn" href="#/rapport">Rapport de commande district</a>' : ''}</div></div>
-      ${compte('jamais') && ctx.peut('corriger') ? `<div class="alert alert-prog">${compte('jamais')} produit(s) n’ont encore jamais eu de stock enregistré.
+      <div class="origines" role="group" aria-label="Origine affichée">
+        <button class="org ${vue === 'tout' ? 'on' : ''}" data-vue="tout"><strong>Tout</strong><span class="small">toutes les origines</span></button>
+        ${origines.map((o) => `<button class="org ${o.id === vue ? (o.est_vente ? 'on' : 'on-v') : ''}" data-vue="${o.id}"><strong>${esc(o.est_vente ? 'Vente' : o.sigle)}</strong><span class="small">${esc(o.est_vente ? 'stock payant' : o.nom)}</span></button>`).join('')}
+      </div>
+      ${compte('jamais') && ctx.peut('corriger') ? `<div class="alert alert-prog">${compte('jamais')} produit(s) n’ont encore jamais eu de stock enregistré${vue === 'tout' ? '' : ' en ' + esc(nom(vue))}.
         S’ils sont déjà sur vos étagères, saisissez-les dans <a href="#/inventaire">Inventaire</a> (stock de départ) ; sinon faites une <a href="#/entree">entrée</a> à leur réception.</div>` : ''}
       <div class="inline">
         <div style="flex:1 1 280px"><label class="sr" for="rech">Chercher</label><input class="in" id="rech" type="search" placeholder="Chercher un produit ou un code-barres" value="${esc(recherche)}"></div>
@@ -59,32 +84,35 @@ export async function render(el, ctx) {
         </div>
       </div>
       <div class="card"><div class="table-box"><table class="tbl">
-        <thead><tr><th>Produit</th>${origines.map((o) => `<th class="r ${o.est_vente ? '' : 'prog-col'}">${esc(o.est_vente ? 'Vente' : o.sigle)}</th>`).join('')}<th class="r">Total</th><th class="r">Conso / mois</th><th>Péremption</th><th>État</th></tr></thead>
+        <thead><tr><th>Produit</th>${plusieurs ? cols.map((o) => `<th class="r ${o.est_vente ? '' : 'prog-col'}">${esc(o.est_vente ? 'Vente' : o.sigle)}</th>`).join('') + '<th class="r">Total</th>' : `<th class="r">Stock ${esc(nom(vue))}</th>`}<th class="r">Conso / mois</th><th>Péremption</th><th>État</th></tr></thead>
         <tbody>${liste.map(({ p, e }) => {
-          const tot = Object.values(p.origines).reduce((s, o) => s + o.quantite, 0);
-          const proch = Object.values(p.origines).map((o) => o.prochaine).filter(Boolean).sort()[0];
-          const cmm = Object.values(p.origines).reduce((s, o) => s + o.cmm, 0);
+          const c = chiffres(p);
           return `<tr class="clic" data-produit="${p.id}"><td>${esc(p.designation)}</td>
-            ${origines.map((o) => `<td class="num r ${o.est_vente ? '' : 'prog-col'}" style="${o.est_vente ? 'font-weight:600' : ''}">${p.origines[o.id] ? fmt(p.origines[o.id].quantite) : '—'}</td>`).join('')}
-            <td class="num r" style="font-weight:700">${fmt(tot)}</td><td class="num r muted">${cmm ? cmm.toFixed(1).replace('.', ',') : '—'}</td>
-            <td class="num">${fmtPeremption(proch)}</td><td><span class="badge ${e.badge}">${esc(e.texte)}</span></td></tr>`;
-        }).join('') || `<tr><td colspan="${origines.length + 5}" class="muted">Aucun produit.</td></tr>`}</tbody>
+            ${plusieurs ? cols.map((o) => `<td class="num r ${o.est_vente ? '' : 'prog-col'}" style="${o.est_vente ? 'font-weight:600' : ''}">${p.origines[o.id] ? fmt(p.origines[o.id].quantite) : '—'}</td>`).join('') : ''}
+            <td class="num r" style="font-weight:700">${fmt(c.total)}</td><td class="num r muted">${c.cmm ? c.cmm.toFixed(1).replace('.', ',') : '—'}</td>
+            <td class="num">${fmtPeremption(c.prochaine)}</td><td><span class="badge ${e.badge}">${esc(e.texte)}</span></td></tr>`;
+        }).join('') || `<tr><td colspan="${(plusieurs ? cols.length + 1 : 1) + 4}" class="muted">Aucun produit${vue === 'tout' ? '' : ' rattaché à ' + esc(nom(vue))}.</td></tr>`}</tbody>
       </table></div></div>
 
       <div class="row">
-        <section class="card card-pad stack" style="flex:1 1 380px">
+        ${montrerCommande ? `<section class="card card-pad stack" style="flex:1 1 380px">
           <h2>À commander (vente)</h2>
           <div class="small muted">Quantité = 2 × consommation mensuelle − stock disponible.</div>
           ${aCommander.map((x) => `<div class="inline" style="justify-content:space-between;border-bottom:1px solid #EDF1EF;padding:6px 0">
             <span>${esc(x.p.designation)}<br><span class="small muted">stock ${x.o.quantite} · conso ${String(x.o.cmm).replace('.', ',')}/mois</span></span><strong class="num">${fmt(x.qte)}</strong></div>`).join('') || '<div class="muted">Rien à commander.</div>'}
-        </section>
-        <section class="card card-pad stack" style="flex:1 1 380px">
-          <h2 style="color:var(--violet)">À demander aux programmes</h2>
+        </section>` : ''}
+        ${progsVus.length ? `<section class="card card-pad stack" style="flex:1 1 380px">
+          <h2 style="color:var(--violet)">${vue === 'tout' ? 'À demander aux programmes' : 'À demander au ' + esc(nom(vue))}</h2>
           ${aDemander.map((x) => `<div class="inline" style="justify-content:space-between;border-bottom:1px solid #EDF1EF;padding:6px 0">
             <span>${esc(x.p.designation)}<br><span class="small muted">stock ${x.s.quantite}</span></span><span class="badge b-prog">${esc(x.o.sigle)}</span></div>`).join('') || '<div class="muted">Rien à demander.</div>'}
-        </section>
+        </section>` : ''}
       </div>`;
 
+    el.querySelectorAll('[data-vue]').forEach((b) => b.onclick = () => {
+      vue = b.dataset.vue === 'tout' ? 'tout' : Number(b.dataset.vue);
+      local.ecrire('stock_origine', vue);
+      dessiner();
+    });
     el.querySelectorAll('[data-filtre]').forEach((b) => b.onclick = () => { filtre = b.dataset.filtre; dessiner(); });
     const r = el.querySelector('#rech');
     r.oninput = () => {
@@ -97,12 +125,12 @@ export async function render(el, ctx) {
     };
     el.querySelectorAll('[data-produit]').forEach((tr) => tr.onclick = () => detail(catalogue.find((p) => p.id === Number(tr.dataset.produit))).catch(erreur));
     el.querySelector('#export').onclick = () => {
-      const lignes = [['Produit', ...origines.map((o) => o.est_vente ? 'Vente' : o.sigle), 'Total', 'Conso/mois', 'État']];
+      const lignes = [['Produit', ...(plusieurs ? [...cols.map((o) => (o.est_vente ? 'Vente' : o.sigle)), 'Total'] : ['Stock ' + nom(vue)]), 'Conso/mois', 'Péremption', 'État']];
       for (const { p, e } of liste) {
-        lignes.push([p.designation, ...origines.map((o) => p.origines[o.id]?.quantite ?? ''), Object.values(p.origines).reduce((s, o) => s + o.quantite, 0),
-          Object.values(p.origines).reduce((s, o) => s + o.cmm, 0), e.texte]);
+        const c = chiffres(p);
+        lignes.push([p.designation, ...(plusieurs ? cols.map((o) => p.origines[o.id]?.quantite ?? '') : []), c.total, c.cmm, fmtPeremption(c.prochaine), e.texte]);
       }
-      telecharger('stock-' + isoJour() + '.csv', csv(lignes));
+      telecharger('stock-' + (vue === 'tout' ? 'tout' : nom(vue)) + '-' + isoJour() + '.csv', csv(lignes));
     };
   }
 

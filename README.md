@@ -18,14 +18,14 @@ Adresse du site : https://madarasenku.github.io/pharmacie-simple/
 |---|---|
 | Comptoir | Vendre (stock Vente) ou distribuer gratuitement (stock d'un programme). Recherche par nom ou scan, lot qui périme en premier, patient facultatif (nom, âge, tranche d'âge, sexe), suggestion de la Gratuité, paiement espèces / Mobile Money / crédit, reçu ou ticket imprimable. **Sans internet**, la vente est gardée sur l'appareil et envoyée au retour du réseau. |
 | Entrée de stock | Réception d'un achat ou d'une dotation : lot, péremption, prix. Une livraison peut être rattachée à une **commande au district** (le reste à recevoir se calcule tout seul). Alerte si la péremption est proche. |
-| Mon stock | Stock par origine (Vente, PNLP, GRAT, PF…), alertes (rupture, bas, périmé, jamais en stock), lots, corrections, historique. |
+| Mon stock | Stock par origine : boutons Tout / Vente / PNLP / GRAT / PF… pour n'afficher qu'une origine (le choix est retenu). Alertes (rupture, bas, périmé, jamais en stock), lots, corrections, historique. |
 | Inventaire | Comptage des étagères, origine par origine : les écarts deviennent des corrections, les produits trouvés sans stock enregistré deviennent le **stock de départ**. Brouillon gardé sur l'appareil, comptage à l'aveugle, feuille de comptage et procès-verbal imprimables. |
 | Ma journée | Ventes du jour, annulation (avec motif), réimpression, ouverture et fermeture de caisse, **ventes faites hors ligne** (en attente ou refusées). |
 | Crédits | Qui doit combien, historique, remboursements (encaissés dans la caisse ouverte), relance WhatsApp. |
 | Programmes | Compte rendu mensuel de chaque programme et bénéficiaires par tranche d'âge et sexe. |
 | Point général | Ventes, bénéfice, programmes et stock sur une période. |
 | Rapport district | Formulaire « commandes recouvrables » rempli automatiquement (2 × CMM − SD), quantités corrigeables (corrections partagées entre tous les postes), **enregistrement de la commande envoyée** et suivi de sa livraison. |
-| Base | Programmes et produits : prix, minimum, code-barres, rattachement à un ou plusieurs programmes. |
+| Base | Programmes et produits : prix, minimum, code-barres, rattachement à un ou plusieurs programmes. Suppression d'un ou plusieurs éléments cochés : effacés s'ils n'ont jamais servi, masqués (inactifs) s'ils ont un historique, refusés s'il reste du stock. |
 | Réglages | Infos de la pharmacie, droits par rôle, utilisateurs, journal des actions sensibles, sauvegarde complète. |
 
 ## Comptes et droits
@@ -54,6 +54,7 @@ Les fichiers SQL sont dans `supabase/migrations/`, à appliquer dans l'ordre :
 | `003_securite.sql` | Corrections de l'audit de sécurité Supabase. |
 | `004_identifiants_et_responsable.sql` | Connexion par identifiant, rôle responsable, droits par rôle. |
 | `005_inventaire_commandes_hors_ligne.sql` | Inventaire, commandes au district, ventes hors ligne sans doublon, verrou après fermeture de caisse, mot de passe provisoire, journal des prix, index de performance. |
+| `006_suppression_produits_programmes.sql` | Suppression de produits et de programmes (un ou plusieurs) sans jamais effacer d'historique. |
 
 Sur la base de production, la 005 a été appliquée en deux temps (le 28/10/2026) : la première moitié depuis l'éditeur
 SQL, puis la fin avec `supabase/production/005_suite.sql` (même contenu, relançable sans risque). Pour une base neuve,

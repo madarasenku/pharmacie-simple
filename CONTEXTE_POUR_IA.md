@@ -1,7 +1,7 @@
 # Pharmacie Simple — dossier de passation (contexte pour une IA ou un développeur)
 
 > À lire EN ENTIER avant de modifier le code. Il complète le README (qui s'adresse à l'utilisatrice).
-> Version applicative : **1.2.0** · cache du service worker : **pharmacie-simple-v3** · base attendue : **5**
+> Version applicative : **1.3.0** · cache du service worker : **pharmacie-simple-v4** · base attendue : **6**
 
 ## 1. Vue d'ensemble
 

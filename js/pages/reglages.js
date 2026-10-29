@@ -9,6 +9,7 @@ const ACTIONS = {
   correction: ['Correction stock', 'b-low'], inventaire: ['Inventaire', 'b-low'], annulation: ['Annulation', 'b-out'], prix: ['Prix modifié', 'b-exp'],
   ouverture_caisse: ['Ouverture caisse', 'b-ok'], fermeture_caisse: ['Fermeture caisse', 'b-ok'], remboursement: ['Remboursement crédit', 'b-ok'],
   commande: ['Commande district', 'b-exp'], commande_annulee: ['Commande annulée', 'b-neutre'], commande_close: ['Commande close', 'b-neutre'],
+  produits_supprimes: ['Produits supprimés', 'b-out'], programmes_supprimes: ['Programmes supprimés', 'b-out'],
   utilisateur_cree: ['Compte créé', 'b-prog'], mot_de_passe_change: ['Mot de passe changé', 'b-prog']
 };
 // Tables copiées dans la sauvegarde, avec un ordre stable pour la lecture page par page
@@ -92,7 +93,7 @@ export async function render(el, ctx) {
 
       <section class="card">
         <div class="card-head"><div><h2>Journal des actions sensibles</h2><div class="small muted">Rien ne s'efface : corrections, annulations, prix, caisse.</div></div>
-          <div class="inline">${[['', 'Tout'], ['correction,inventaire', 'Stock'], ['annulation', 'Annulations'], ['prix', 'Prix'], ['ouverture_caisse,fermeture_caisse,remboursement', 'Caisse'], ['commande,commande_annulee,commande_close', 'Commandes'], ['utilisateur_cree,mot_de_passe_change', 'Comptes']]
+          <div class="inline">${[['', 'Tout'], ['correction,inventaire', 'Stock'], ['annulation', 'Annulations'], ['prix,produits_supprimes,programmes_supprimes', 'Base et prix'], ['ouverture_caisse,fermeture_caisse,remboursement', 'Caisse'], ['commande,commande_annulee,commande_close', 'Commandes'], ['utilisateur_cree,mot_de_passe_change', 'Comptes']]
             .map(([k, l]) => `<button class="chip ${filtre === k ? 'on' : ''}" data-j="${k}">${l}</button>`).join('')}</div></div>
         <div class="table-box"><table class="tbl"><thead><tr><th>Date</th><th>Qui</th><th>Action</th><th>Détail</th></tr></thead>
           <tbody>${liste.map((j) => {
