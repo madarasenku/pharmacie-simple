@@ -1,7 +1,7 @@
 # Pharmacie Simple — dossier de passation (contexte pour une IA ou un développeur)
 
 > À lire EN ENTIER avant de modifier le code. Il complète le README (qui s'adresse à l'utilisatrice).
-> Version applicative : **1.6.0** · cache du service worker : **pharmacie-simple-v7** · base attendue : **9**
+> Version applicative : **1.7.0** · cache du service worker : **pharmacie-simple-v8** · base attendue : **10**
 
 ## 1. Vue d'ensemble
 
@@ -77,11 +77,12 @@
   personne et par heure, gardées 6 mois), marquées vues par `marquer_erreurs_vues(ids)` (`null` = toutes). Côté site,
   `erreur()` appelle `rapporter()` (util.js) ; le rapporteur posé par `app.js` ignore les coupures réseau et n'envoie
   la même erreur (page + message) qu'une fois par minute.
-- Bénéfices et stock valorisé : RPC `benefices(debut, fin)` et `stock_valeurs(debut, fin)` (droit `rapports`, une seule valeur JSON
-  pour échapper à la limite de 1000 lignes). Bénéfice = Vente seulement (`quantite × (prix_unitaire − cout_unitaire)` des lignes de
-  ventes non annulées et non gratuites) ; pertes = `perime` et `correction` négatives au prix d'achat ; PHPSP exclu (argent à reverser).
+- Bénéfices et stock valorisé : RPC `benefices(debut, fin, programme)` (migration 010 ; l'ancienne forme à deux arguments donne
+  la Vente) et `stock_valeurs(debut, fin)` (droit `rapports`, une seule valeur JSON pour échapper à la limite de 1000 lignes).
+  Bénéfice d'un programme vendu = `quantite × (prix_unitaire − cout_unitaire)` des lignes de ventes non annulées et non gratuites ;
+  pertes = `perime` et `correction` négatives au prix d'achat. Le PHPSP a son propre bénéfice, jamais ajouté à celui de la Vente.
   Prix d'un produit pour un programme = `produits_programmes.prix_vente` sinon `produits.prix_vente` (pour un programme gratuit
-  c'est la « valeur » d'une unité, jamais un prix de vente). Écrans : vues `benefices` et `stock` de `js/pages/point.js` ; colonnes
+  c'est la « valeur » d'une unité, jamais un prix de vente). Écran : vue `resultats` (« Bénéfices et stock ») de `js/pages/point.js`, filtre `filtre` = 'tous' ou un programme ; colonnes
   Prix et Valeur de `stock.js` visibles seulement avec le droit `rapports`.
 - `anomalies()` (gérant) : contrôle calculé à la demande, jamais stocké — `code`, `gravite` (haute / moyenne / info),
   `titre`, `detail` qui **commence par le nom du produit** (« SALBUTAMOL AMP INJ — Vente »), `page` où corriger, `cle`.

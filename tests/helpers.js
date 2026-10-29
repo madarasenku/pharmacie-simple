@@ -89,7 +89,7 @@ function donneesDeBase() {
       { cle: 'droits_responsable', valeur: { vendre: true, entree: true, credit: true, programmes: true, corriger: true, annuler: true, prix: false, rapports: true, base: false } },
       { cle: 'pharmacie', valeur: { nom: 'Pharmacie Test', region: 'SUD COMOÉ', district: 'GRAND-BASSAM', etablissement: 'CSR TEST' } },
       { cle: 'derniere_sauvegarde', valeur: { date: new Date().toISOString(), par: 'Gérante Test' } },
-      { cle: 'version_base', valeur: { version: 9 } }
+      { cle: 'version_base', valeur: { version: 10 } }
     ],
     programmes, produits, lots, produits_programmes: liens,
     clients: [{ id: 1, nom: 'TRAORE Adama', telephone: '0700000001', plafond: 10000 }],
@@ -227,11 +227,11 @@ function rpcParDefaut(db, etat) {
         detail: db.produits.find((x) => x.id === l.produit_id).designation + ' — ' + l.quantite + ' unité(s), lot ' + l.numero, page: 'inventaire', cle: 'perime:' + l.id }));
       return [...prix, ...perimes];
     },
-    // Comme benefices() côté serveur : la Vente seulement, gratuit et annulées exclus, pertes au prix d'achat
+    // Comme benefices() côté serveur : un programme vendu (la Vente par défaut), gratuit et annulées exclus, pertes au prix d'achat
     benefices: (a) => {
       if (!['gerant', 'responsable'].includes(etat.utilisateur?.role)) throw new Error('Action non autorisée (rapports).');
       if (!(a.p_fin > a.p_debut)) throw new Error('Période invalide.');
-      const vente = db.programmes.find((g) => g.est_vente).id;
+      const vente = a.p_programme ?? db.programmes.find((g) => g.est_vente).id;
       const dans = (iso) => iso.slice(0, 10) >= a.p_debut && iso.slice(0, 10) < a.p_fin;
       const jours = new Map(), produits = new Map(), pertes = new Map();
       for (const v of db.ventes.filter((x) => x.programme_id === vente && !x.annulee && x.mode_paiement !== 'gratuit' && dans(x.created_at))) {
