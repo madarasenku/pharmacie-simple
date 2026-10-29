@@ -41,7 +41,7 @@ Deno.serve(async (req) => {
 
   if (corps.action === 'creer') {
     const identifiant = String(corps.identifiant ?? '').trim().toLowerCase();
-    const nom = String(corps.nom ?? '').trim();
+    const nom = String(corps.nom ?? '').trim().toUpperCase();
     const motDePasse = String(corps.mot_de_passe ?? '');
     const role = String(corps.role ?? 'vendeur');
     if (!/^[a-z0-9._-]{3,30}$/.test(identifiant)) {

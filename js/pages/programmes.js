@@ -1,5 +1,5 @@
 // Programmes : compte rendu mensuel par programme et bénéficiaires par tranche d'âge et sexe.
-import { esc, fmt, fmtDateHeure, q, rpc, isoMois, nomMois, imprimer, csv, telecharger, TRANCHES } from '../util.js';
+import { esc, fmt, fmtDateHeure, q, rpc, tout, isoMois, nomMois, imprimer, csv, telecharger, TRANCHES } from '../util.js';
 
 export async function render(el, ctx) {
   const { sb } = ctx;
@@ -15,13 +15,18 @@ export async function render(el, ctx) {
     const prog = progs.find((p) => p.id === progId);
     const debut = mois + '-01';
     const finMois = new Date(new Date(debut + 'T00:00:00').setMonth(new Date(debut + 'T00:00:00').getMonth() + 1));
-    const [rapport, stats, recents] = await Promise.all([
+    const [rapport, stats, recents, encaisse] = await Promise.all([
       rpc(sb, 'rapport_mensuel', { p_programme: progId, p_debut: debut }),
       rpc(sb, 'stats_beneficiaires', { p_programme: progId, p_debut: debut }),
       q(sb.from('ventes').select('numero, created_at, patient_nom, patient_age, patient_age_unite, patient_tranche, patient_sexe, annulee, ventes_lignes(quantite, produits(designation))')
         .eq('programme_id', progId).gte('created_at', new Date(debut + 'T00:00:00').toISOString()).lt('created_at', finMois.toISOString())
-        .order('created_at', { ascending: false }).limit(30))
+        .order('created_at', { ascending: false }).limit(30)),
+      // Programme recouvrable (PHPSP…) : l'argent encaissé, à reverser au programme
+      prog.recouvrable ? tout(() => sb.from('ventes').select('id, total').eq('programme_id', progId).eq('annulee', false)
+        .gte('created_at', new Date(debut + 'T00:00:00').toISOString()).lt('created_at', finMois.toISOString()).order('id')) : Promise.resolve([])
     ]);
+    const montant = encaisse.reduce((s, v) => s + Number(v.total), 0);
+    const verbe = prog.recouvrable ? 'Vendu' : 'Donné';
     const recu = rapport.reduce((s, r) => s + r.recu, 0);
     const donne = rapport.reduce((s, r) => s + r.dispense, 0);
     const benef = stats.reduce((s, r) => s + r.nombre, 0);
@@ -34,7 +39,7 @@ export async function render(el, ctx) {
 
     const tableRapport = (pourImpression) => `
       <table class="${pourImpression ? 'ft' : 'tbl'}">
-        <thead><tr><th>Produit</th><th class="r">Stock début</th><th class="r">Reçu</th><th class="r">Donné</th><th class="r">Périmés</th><th class="r">Stock fin</th><th class="r">Jours de rupture</th><th class="r">CMM</th><th class="r">Qté à demander (2CMM − SD)</th></tr></thead>
+        <thead><tr><th>Produit</th><th class="r">Stock début</th><th class="r">Reçu</th><th class="r">${verbe}</th><th class="r">Périmés</th><th class="r">Stock fin</th><th class="r">Jours de rupture</th><th class="r">CMM</th><th class="r">Qté à demander (2CMM − SD)</th></tr></thead>
         <tbody>${rapport.map((r) => `<tr><td>${esc(r.designation)}</td><td class="num r n">${fmt(r.stock_initial)}</td><td class="num r n">${fmt(r.recu)}</td>
           <td class="num r n">${fmt(r.dispense)}</td><td class="num r n">${fmt(r.perimes)}</td><td class="num r n" style="font-weight:700">${fmt(r.stock_disponible)}</td>
           <td class="num r n" style="${r.jours_rupture ? 'color:var(--rouge);font-weight:700' : ''}">${r.jours_rupture}</td><td class="num r n">${String(r.cmm).replace('.', ',')}</td>
@@ -56,7 +61,8 @@ export async function render(el, ctx) {
       </div>
       <section class="grid-kpi">
         <div class="card kpi"><div class="t">Reçu ce mois</div><div class="v">${fmt(recu)}</div><div class="s">unités</div></div>
-        <div class="card kpi"><div class="t">Donné ce mois</div><div class="v" style="color:var(--violet)">${fmt(donne)}</div><div class="s">unités</div></div>
+        <div class="card kpi"><div class="t">${verbe} ce mois</div><div class="v" style="color:var(--violet)">${fmt(donne)}</div><div class="s">unités</div></div>
+        ${prog.recouvrable ? `<div class="card kpi"><div class="t">Montant encaissé</div><div class="v" style="color:var(--bleu)">${fmt(montant)}</div><div class="s">FCFA · ${encaisse.length} vente(s) · <a href="#/point">point ${esc(prog.sigle)}</a></div></div>` : ''}
         <div class="card kpi"><div class="t">Bénéficiaires</div><div class="v">${benef}</div><div class="s">passages</div></div>
         <div class="card kpi"><div class="t">Produits à demander</div><div class="v" style="color:var(--rouge)">${alertes}</div><div class="s">rupture ou sous le besoin</div></div>
       </section>
@@ -66,10 +72,10 @@ export async function render(el, ctx) {
       </section>
       <div class="row">
         <section class="card" style="flex:1 1 420px"><div class="card-head"><h2>Bénéficiaires par tranche d'âge et sexe</h2></div><div class="table-box">${tableStats(false)}</div></section>
-        <section class="card" style="flex:1 1 420px"><div class="card-head"><h2>Dernières distributions</h2><a class="btn btn-sm btn-v" href="#/comptoir">Distribuer</a></div>
+        <section class="card" style="flex:1 1 420px"><div class="card-head"><h2>${prog.recouvrable ? 'Dernières ventes' : 'Dernières distributions'}</h2><a class="btn btn-sm btn-v" href="#/comptoir">${prog.recouvrable ? 'Vendre' : 'Distribuer'}</a></div>
           <div class="table-box"><table class="tbl"><tbody>${recents.map((v) => `<tr class="${v.annulee ? 'off' : ''}"><td class="num small">${fmtDateHeure(v.created_at)}</td>
             <td>${esc(v.patient_nom || 'Anonyme')}<br><span class="small muted">${esc([v.patient_age ? v.patient_age + ' ' + v.patient_age_unite : v.patient_tranche, v.patient_sexe !== 'NP' ? v.patient_sexe : ''].filter(Boolean).join(' · '))}</span></td>
-            <td class="small">${esc(v.ventes_lignes.map((l) => l.produits?.designation + ' × ' + l.quantite).join(', '))}</td></tr>`).join('') || '<tr><td class="muted">Aucune distribution ce mois.</td></tr>'}</tbody></table></div></section>
+            <td class="small">${esc(v.ventes_lignes.map((l) => l.produits?.designation + ' × ' + l.quantite).join(', '))}</td></tr>`).join('') || `<tr><td class="muted">${prog.recouvrable ? 'Aucune vente' : 'Aucune distribution'} ce mois.</td></tr>`}</tbody></table></div></section>
       </div>`;
 
     el.querySelectorAll('[data-prog]').forEach((b) => b.onclick = () => { progId = Number(b.dataset.prog); dessiner(); });
@@ -83,13 +89,14 @@ export async function render(el, ctx) {
           <div style="text-align:right"><div><strong>PÉRIODE :</strong> ${esc(nomMois(mois))}</div><div><strong>DATE :</strong> ${new Date().toLocaleDateString('fr-FR')}</div></div>
         </div>
         <div style="margin-top:12px">${tableRapport(true)}</div>
+        ${prog.recouvrable ? `<div style="margin-top:8px;font-weight:700">Montant encaissé sur la période : ${fmt(montant)} FCFA</div>` : ''}
         <h3 style="margin:14px 0 6px">Bénéficiaires par tranche d'âge et sexe</h3>
         <div style="max-width:520px">${tableStats(true)}</div>
         <div style="display:flex;justify-content:space-between;margin-top:28px;font-size:12px"><div>Le gestionnaire de la pharmacie<div style="height:50px"></div></div><div>Le responsable du centre de santé<div style="height:50px"></div></div></div>
       </div>`, { paysage: true });
     };
     el.querySelector('#csv').onclick = () => {
-      const l = [['Produit', 'Stock début', 'Reçu', 'Donné', 'Périmés', 'Stock fin', 'Jours de rupture', 'CMM', 'Qté à demander']];
+      const l = [['Produit', 'Stock début', 'Reçu', verbe, 'Périmés', 'Stock fin', 'Jours de rupture', 'CMM', 'Qté à demander']];
       rapport.forEach((r) => l.push([r.designation, r.stock_initial, r.recu, r.dispense, r.perimes, r.stock_disponible, r.jours_rupture, r.cmm, r.quantite_commandee]));
       l.push([], ['Tranche', 'M', 'F', 'Non précisé', 'Total']);
       lignesTr.forEach((r) => l.push([r.t, r.m, r.f, r.np, r.m + r.f + r.np]));

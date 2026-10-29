@@ -28,20 +28,36 @@ if (!window.supabase?.createClient) {
 }
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true } });
 
-// Pages du menu : droit nécessaire (null = tout membre, 'gerant' = gérant seul)
+// Pages du menu : droit nécessaire (null = tout membre, 'gerant' = gérant seul), groupe d'onglets et icône
 const PAGES = [
-  { id: 'comptoir', titre: 'Comptoir', module: comptoir, droit: ['vendre', 'programmes'], horsLigne: true },
-  { id: 'entree', titre: 'Entrée de stock', module: entree, droit: ['entree'] },
-  { id: 'stock', titre: 'Mon stock', module: stock, droit: null },
-  { id: 'inventaire', titre: 'Inventaire', module: inventaire, droit: ['corriger'] },
-  { id: 'journee', titre: 'Ma journée', module: journee, droit: ['vendre', 'programmes'] },
-  { id: 'credits', titre: 'Crédits', module: credits, droit: ['credit'] },
-  { id: 'programmes', titre: 'Programmes', module: programmes, droit: ['programmes', 'rapports'] },
-  { id: 'point', titre: 'Point général', module: point, droit: ['rapports'] },
-  { id: 'rapport', titre: 'Rapport district', module: rapport, droit: ['rapports'] },
-  { id: 'base', titre: 'Base', module: base, droit: ['base'] },
-  { id: 'reglages', titre: 'Réglages', module: reglages, droit: 'gerant' }
+  { id: 'comptoir', titre: 'Comptoir', module: comptoir, droit: ['vendre', 'programmes'], horsLigne: true, groupe: 'vendre', icone: 'comptoir' },
+  { id: 'journee', titre: 'Ma journée', module: journee, droit: ['vendre', 'programmes'], groupe: 'vendre', icone: 'journee' },
+  { id: 'credits', titre: 'Crédits', module: credits, droit: ['credit'], groupe: 'vendre', icone: 'credits' },
+  { id: 'entree', titre: 'Entrée de stock', court: 'Entrées', module: entree, droit: ['entree'], groupe: 'stock', icone: 'entree' },
+  { id: 'stock', titre: 'Mon stock', module: stock, droit: null, groupe: 'stock', icone: 'stock' },
+  { id: 'inventaire', titre: 'Inventaire', module: inventaire, droit: ['corriger'], groupe: 'stock', icone: 'inventaire' },
+  { id: 'programmes', titre: 'Programmes', module: programmes, droit: ['programmes', 'rapports'], groupe: 'suivi', icone: 'programmes' },
+  { id: 'point', titre: 'Point général', court: 'Point', module: point, droit: ['rapports'], groupe: 'suivi', icone: 'point' },
+  { id: 'rapport', titre: 'Rapport district', court: 'District', module: rapport, droit: ['rapports'], groupe: 'suivi', icone: 'rapport' },
+  { id: 'base', titre: 'Base', module: base, droit: ['base'], groupe: 'gestion', icone: 'base' },
+  { id: 'reglages', titre: 'Réglages', module: reglages, droit: 'gerant', groupe: 'gestion', icone: 'reglages' }
 ];
+
+// Icônes des onglets (traits simples, couleur du texte)
+const ICONES = {
+  comptoir: '<circle cx="9" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/><path d="M2.5 3.5h2.6l2.3 11a1 1 0 0 0 1 .8h8.9a1 1 0 0 0 1-.8l1.6-7.5H6.2"/>',
+  journee: '<rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4M8 13.5h3M8 17h6"/>',
+  credits: '<rect x="2.5" y="6" width="19" height="13" rx="2"/><path d="M2.5 10.5h19M6.5 15h4"/>',
+  entree: '<path d="M12 3v10.5M7.8 9.4 12 13.6l4.2-4.2"/><path d="M3.5 14.5v4a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-4"/>',
+  stock: '<path d="M3 7.5 12 3l9 4.5-9 4.5-9-4.5Z"/><path d="M3 7.5v9l9 4.5 9-4.5v-9M12 12v9"/>',
+  inventaire: '<rect x="5" y="4.5" width="14" height="16.5" rx="2"/><path d="M9 3h6v3.2H9zM8.8 13.3l2.2 2.2 4.4-4.4"/>',
+  programmes: '<path d="M12 20.5s-7.5-4.6-9.2-9.4C1.6 7.6 4 4 7.6 4.3c1.9.2 3.4 1.4 4.4 2.9 1-1.5 2.5-2.7 4.4-2.9C20 4 22.4 7.6 21.2 11.1 19.5 15.9 12 20.5 12 20.5Z"/><path d="M12 9.5v5M9.5 12h5"/>',
+  point: '<path d="M3.5 20.5h17M6.5 17v-5M11 17V7M15.5 17v-7.5M20 17V4.5"/>',
+  rapport: '<path d="M6 3h8.5L19 7.5V21H6z"/><path d="M14 3v5h5M9 12.5h7M9 16.5h7"/>',
+  base: '<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
+  reglages: '<path d="M4 6.5h9M17 6.5h3M4 12h3M11 12h9M4 17.5h11M19 17.5h1"/><circle cx="15" cy="6.5" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17.5" r="2"/>'
+};
+const icone = (nom) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONES[nom] || ''}</svg>`;
 
 const ctx = {
   sb,
@@ -264,8 +280,28 @@ async function lancerSynchro(afficher = false) {
 
 let pageCourante = null;
 
-const menuHtml = () => PAGES.filter(pageAutorisee).map((p) => `<a href="#/${p.id}" data-page="${p.id}">${esc(p.titre)}</a>`).join('')
-  + `<span class="version" style="margin-left:auto;align-self:center">v${esc(APP_VERSION)}</span>`;
+// Onglets regroupés (vendre · stock · suivi · gestion), séparés par un trait fin
+const menuHtml = () => {
+  const groupes = [];
+  for (const p of PAGES.filter(pageAutorisee)) {
+    if (!groupes.length || groupes[groupes.length - 1].nom !== p.groupe) groupes.push({ nom: p.groupe, pages: [] });
+    groupes[groupes.length - 1].pages.push(p);
+  }
+  return groupes.map((g) => `<div class="groupe">${g.pages.map((p) => `<a href="#/${p.id}" data-page="${p.id}" title="${esc(p.titre)}">${icone(p.icone)}${p.court ? `<span class="long">${esc(p.titre)}</span><span class="court">${esc(p.court)}</span>` : `<span>${esc(p.titre)}</span>`}</a>`).join('')}</div>`)
+    .join('<span class="sep" aria-hidden="true"></span>')
+    + `<span class="version">v${esc(APP_VERSION)}</span>`;
+};
+// Onglet actif : souligné, et ramené dans la zone visible quand la barre défile (téléphone)
+function marquerOnglet(id) {
+  const nav = document.querySelector('nav.menu');
+  if (!nav) return;
+  nav.querySelectorAll('a').forEach((a) => {
+    const on = a.dataset.page === id;
+    a.classList.toggle('on', on);
+    if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    if (on && nav.scrollWidth > nav.clientWidth) nav.scrollTo({ left: a.offsetLeft - (nav.clientWidth - a.offsetWidth) / 2, behavior: 'smooth' });
+  });
+}
 
 function dessinerCadre() {
   app.innerHTML = `
@@ -276,7 +312,7 @@ function dessinerCadre() {
         <div class="brand-sous" id="sous-titre">${esc(new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}</div></div>
       </div>
       <div class="user-box">
-        <span>${esc(ctx.profil.nom || ctx.profil.identifiant || ctx.profil.email)} · ${esc(ROLES[ctx.profil.role] || ctx.profil.role)}</span>
+        <span class="qui"><strong>${esc(String(ctx.profil.nom || ctx.profil.identifiant || ctx.profil.email).toUpperCase())}</strong><small>${esc(ROLES[ctx.profil.role] || ctx.profil.role)} · v${esc(APP_VERSION)}</small></span>
         ${ctx.horsLigne ? '' : '<button type="button" id="mon-mdp">Mon mot de passe</button>'}
         <button type="button" id="deconnexion">Se déconnecter</button>
       </div>
@@ -332,7 +368,7 @@ async function afficherPage() {
   const page = pages.find((p) => p.id === id) || pages[0];
   if (!page) return;
   if (page.id !== id) { history.replaceState(null, '', '#/' + page.id); }
-  document.querySelectorAll('nav.menu a').forEach((a) => a.classList.toggle('on', a.dataset.page === page.id));
+  marquerOnglet(page.id);
   const el = document.getElementById('contenu');
   if (pageCourante?.module.quitter) pageCourante.module.quitter();
   pageCourante = page;
@@ -415,7 +451,7 @@ async function verifierCompte() {
       ctx.profil.role = p.role;
       ctx.memoriser();
       document.querySelector('nav.menu').innerHTML = menuHtml();
-      document.querySelectorAll('nav.menu a').forEach((a) => a.classList.toggle('on', a.dataset.page === pageCourante?.id));
+      marquerOnglet(pageCourante?.id);
       toast('Votre rôle a été changé par le gérant : ' + (ROLES[p.role] || p.role) + '.', 'warn');
     }
   } catch (_) { /* réseau : on réessaiera */ }
@@ -438,7 +474,7 @@ async function reprendreEnLigne() {
     await ctx.rechargerContexte();
     ctx.horsLigne = false;
     document.querySelector('nav.menu').innerHTML = menuHtml();
-    document.querySelectorAll('nav.menu a').forEach((a) => a.classList.toggle('on', a.dataset.page === pageCourante?.id));
+    marquerOnglet(pageCourante?.id);
     const boite = document.querySelector('.user-box');
     if (boite && !boite.querySelector('#mon-mdp')) {
       boite.querySelector('#deconnexion').insertAdjacentHTML('beforebegin', '<button type="button" id="mon-mdp">Mon mot de passe</button>');

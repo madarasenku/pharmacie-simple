@@ -69,7 +69,10 @@ export async function render(el, ctx) {
     const peutAnnuler = (v) => ctx.peut('annuler') && (!fermees.has(v.caisse_id) || ctx.peut('gerant'));
 
     const valides = ventes.filter((v) => !v.annulee);
-    const vv = valides.filter((v) => v.mode_paiement !== 'gratuit');
+    // Point normal = la Vente seulement ; chaque programme recouvrable (PHPSP…) a son propre total
+    const venteId = ctx.vente?.id;
+    const recouvrables = ctx.programmes.filter((g) => g.recouvrable);
+    const vv = valides.filter((v) => v.mode_paiement !== 'gratuit' && v.programme_id === venteId);
     const ca = vv.reduce((s, v) => s + Number(v.total), 0);
     const benef = vv.reduce((s, v) => s + v.ventes_lignes.reduce((t, l) => t + l.quantite * (l.prix_unitaire - l.cout_unitaire), 0), 0);
     const credit = vv.filter((v) => v.mode_paiement === 'credit').reduce((s, v) => s + Number(v.total), 0);
@@ -82,7 +85,11 @@ export async function render(el, ctx) {
       ${sectionFile()}
       <section class="grid-kpi">
         <div class="card kpi"><div class="t">Ventes</div><div class="v">${vv.length}</div><div class="s">${ventes.length - valides.length} annulée(s)</div></div>
-        <div class="card kpi"><div class="t">Chiffre d'affaires</div><div class="v">${fmt(ca)}</div><div class="s">FCFA (crédit compris)</div></div>
+        <div class="card kpi"><div class="t">Chiffre d'affaires (Vente)</div><div class="v">${fmt(ca)}</div><div class="s">FCFA (crédit compris)</div></div>
+        ${recouvrables.map((g) => {
+          const vs = valides.filter((v) => v.programme_id === g.id);
+          return `<div class="card kpi"><div class="t">Ventes ${esc(g.sigle)}</div><div class="v" style="color:var(--bleu)">${fmt(vs.reduce((t, v) => t + Number(v.total), 0))}</div><div class="s">FCFA · ${vs.length} vente(s) · point séparé</div></div>`;
+        }).join('')}
         ${ctx.peut('rapports') ? `<div class="card kpi"><div class="t">Bénéfice estimé</div><div class="v" style="color:#1A6438">${fmt(benef)}</div><div class="s">vente − achat</div></div>` : ''}
         <div class="card kpi"><div class="t">Vendu à crédit</div><div class="v" style="color:var(--rouge)">${fmt(credit)}</div><div class="s"><a href="#/credits">Voir les crédits</a></div></div>
         <div class="card kpi"><div class="t">Distributions gratuites</div><div class="v" style="color:var(--violet)">${distrib}</div><div class="s">programmes</div></div>
@@ -95,7 +102,7 @@ export async function render(el, ctx) {
             <tbody>${ventes.map((v) => `<tr class="${v.annulee ? 'off' : ''}">
               <td class="num">${fmtHeure(v.created_at)}</td><td class="num small">${esc(v.numero)}${v.saisie_hors_ligne ? '<br><span class="badge b-low" title="Vente faite sans internet, envoyée plus tard">hors ligne</span>' : ''}</td>
               <td>${esc(v.ventes_lignes.map((l) => l.produits?.designation + ' × ' + l.quantite).join(', '))}${v.patient_nom ? `<br><span class="small muted">${esc(v.patient_nom)}</span>` : ''}</td>
-              <td><span class="badge ${v.mode_paiement === 'gratuit' ? 'b-prog' : 'b-ok'}">${esc(v.mode_paiement === 'gratuit' ? nomOrigine(v.programme_id) : MODES[v.mode_paiement])}</span>${v.clients ? `<br><span class="small">${esc(v.clients.nom)}</span>` : ''}</td>
+              <td><span class="badge ${v.mode_paiement === 'gratuit' ? 'b-prog' : v.programme_id === venteId ? 'b-ok' : 'b-rec'}">${esc(v.mode_paiement === 'gratuit' ? nomOrigine(v.programme_id) : (v.programme_id === venteId ? '' : nomOrigine(v.programme_id) + ' · ') + MODES[v.mode_paiement])}</span>${v.clients ? `<br><span class="small">${esc(v.clients.nom)}</span>` : ''}</td>
               <td class="num r" style="font-weight:600">${v.mode_paiement === 'gratuit' ? '0' : fmt(v.total)}</td>
               <td class="keep"><div class="inline" style="flex-wrap:nowrap">
                 ${v.annulee ? `<span class="badge b-out" title="${esc(v.motif_annulation || '')}">Annulée</span>` : `<button class="btn btn-sm" data-reimp="${v.id}">Reçu</button>${peutAnnuler(v) ? `<button class="btn btn-sm btn-danger" data-annuler="${v.id}">Annuler</button>` : (ctx.peut('annuler') ? '<span class="badge b-low" title="Caisse déjà fermée : seul le gérant peut annuler">Caisse fermée</span>' : '')}`}
@@ -112,6 +119,7 @@ export async function render(el, ctx) {
               <dl class="grid-2" style="margin:0;grid-template-columns:1fr auto">
                 <dt class="muted">Fond de caisse</dt><dd class="num r" style="margin:0">${fmt(resume.fond)}</dd>
                 <dt class="muted">Ventes en espèces</dt><dd class="num r" style="margin:0">${fmt(resume.especes)}</dd>
+                ${(resume.recouvrables || []).map((r) => `<dt class="muted small" style="padding-left:12px">dont ${esc(r.sigle)} (à garder à part)</dt><dd class="num r small" style="margin:0;color:var(--bleu)">${fmt(r.especes)}</dd>`).join('')}
                 <dt class="muted">Remboursements de crédit</dt><dd class="num r" style="margin:0">${fmt(resume.remboursements)}</dd>
                 <dt class="muted">Mobile Money (hors tiroir)</dt><dd class="num r" style="margin:0">${fmt(resume.momo)}</dd>
                 <dt style="font-weight:700">Espèces attendues</dt><dd class="num r" style="margin:0;font-weight:700">${fmt(Number(resume.fond) + Number(resume.especes) + Number(resume.remboursements))}</dd>

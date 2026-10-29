@@ -16,17 +16,25 @@ Adresse du site : https://madarasenku.github.io/pharmacie-simple/
 
 | Onglet | Rôle |
 |---|---|
-| Comptoir | Vendre (stock Vente) ou distribuer gratuitement (stock d'un programme). Recherche par nom ou scan, lot qui périme en premier, patient facultatif (nom, âge, tranche d'âge, sexe), suggestion de la Gratuité, paiement espèces / Mobile Money / crédit, reçu ou ticket imprimable. **Sans internet**, la vente est gardée sur l'appareil et envoyée au retour du réseau. |
+| Comptoir | Vendre (stock Vente, ou programme recouvrable comme PHPSP à son propre prix) ou distribuer gratuitement (stock d'un programme). Recherche par nom ou scan, lot qui périme en premier, patient facultatif (nom, âge, tranche d'âge, sexe), suggestion de la Gratuité, paiement espèces / Mobile Money / crédit, reçu ou ticket imprimable. **Sans internet**, la vente est gardée sur l'appareil et envoyée au retour du réseau. |
 | Entrée de stock | Réception d'un achat ou d'une dotation : lot, péremption, prix. Une livraison peut être rattachée à une **commande au district** (le reste à recevoir se calcule tout seul). Alerte si la péremption est proche. |
 | Mon stock | Stock par origine : boutons Tout / Vente / PNLP / GRAT / PF… pour n'afficher qu'une origine (le choix est retenu). Alertes (rupture, bas, périmé, jamais en stock), lots, corrections, historique. |
 | Inventaire | Comptage des étagères, origine par origine : les écarts deviennent des corrections, les produits trouvés sans stock enregistré deviennent le **stock de départ**. Brouillon gardé sur l'appareil, comptage à l'aveugle, feuille de comptage et procès-verbal imprimables. |
 | Ma journée | Ventes du jour, annulation (avec motif), réimpression, ouverture et fermeture de caisse, **ventes faites hors ligne** (en attente ou refusées). |
 | Crédits | Qui doit combien, historique, remboursements (encaissés dans la caisse ouverte), relance WhatsApp. |
 | Programmes | Compte rendu mensuel de chaque programme et bénéficiaires par tranche d'âge et sexe. |
-| Point général | Ventes, bénéfice, programmes et stock sur une période. |
+| Point général | Boutons « Point normal » (Vente, programmes gratuits, stock) et « Point PHPSP » (un par programme recouvrable : recettes à reverser, détail par produit, stock, impression). Les deux ne se mélangent jamais. |
 | Rapport district | Formulaire « commandes recouvrables » rempli automatiquement (2 × CMM − SD), quantités corrigeables (corrections partagées entre tous les postes), **enregistrement de la commande envoyée** et suivi de sa livraison. |
 | Base | Programmes et produits : prix, minimum, code-barres, rattachement à un ou plusieurs programmes. Suppression d'un ou plusieurs éléments cochés : effacés s'ils n'ont jamais servi, masqués (inactifs) s'ils ont un historique, refusés s'il reste du stock. |
 | Réglages | Infos de la pharmacie, droits par rôle, utilisateurs, journal des actions sensibles, sauvegarde complète. |
+
+## Programmes recouvrables (PHPSP)
+
+Un programme **recouvrable** (type choisi dans **Base → Modifier le programme**) fournit des médicaments qui sont **vendus**
+et non donnés : il faut une caisse ouverte, on choisit espèces, Mobile Money ou crédit, et un reçu est imprimé. Chaque produit
+peut avoir un **prix PHPSP** différent de son prix de vente normal (colonne « Prix PHPSP » de la Base ; vide = prix normal).
+Son argent est dans le tiroir mais toujours montré **à part** (Ma journée, fermeture de caisse) et il a son **propre point**
+dans le Point général et son compte rendu dans Programmes (avec le montant encaissé).
 
 ## Comptes et droits
 
@@ -34,6 +42,7 @@ Adresse du site : https://madarasenku.github.io/pharmacie-simple/
   dans **Réglages → Utilisateurs** et peut redonner un mot de passe.
 - Le mot de passe donné par le gérant est **provisoire** : la personne choisit le sien à sa première connexion.
   Règle : au moins 8 caractères, avec au moins une lettre et un chiffre.
+- Les noms des agents sont toujours enregistrés en MAJUSCULES.
 - Le premier compte (créé avec une adresse e-mail) est le gérant ; il peut taper son adresse e-mail dans « Identifiant ».
 - Trois rôles : **Gérant** (tous les droits, Réglages compris), **Responsable** (large par défaut) et **Vendeur**
   (limité par défaut). Les droits se cochent dans **Réglages → Droits par rôle**.
@@ -55,6 +64,7 @@ Les fichiers SQL sont dans `supabase/migrations/`, à appliquer dans l'ordre :
 | `004_identifiants_et_responsable.sql` | Connexion par identifiant, rôle responsable, droits par rôle. |
 | `005_inventaire_commandes_hors_ligne.sql` | Inventaire, commandes au district, ventes hors ligne sans doublon, verrou après fermeture de caisse, mot de passe provisoire, journal des prix, index de performance. |
 | `006_suppression_produits_programmes.sql` | Suppression de produits et de programmes (un ou plusieurs) sans jamais effacer d'historique. |
+| `007_programmes_recouvrables_phpsp.sql` | Programmes « recouvrables » (PHPSP) : vendus, avec un prix propre par origine et leur argent montré à part dans la caisse ; noms des agents en majuscules. |
 
 Sur la base de production, la 005 a été appliquée en deux temps (le 28/10/2026) : la première moitié depuis l'éditeur
 SQL, puis la fin avec `supabase/production/005_suite.sql` (même contenu, relançable sans risque). Pour une base neuve,

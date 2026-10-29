@@ -23,7 +23,7 @@ lancerTest('CONNEXION — identifiant, erreurs, œil', async (r) => {
     await page.fill('#mdp', 'Awa12345');
     await page.click('button[type=submit]');
     await page.waitForSelector('#contenu[data-pret]');
-    r.ok('connectée : le comptoir s’ouvre', (await page.$eval('.user-box', (u) => u.textContent)).includes('Awa Vendeuse'));
+    r.ok('connectée : le comptoir s’ouvre, nom en majuscules', (await page.$eval('.user-box', (u) => u.textContent)).includes('AWA VENDEUSE'));
     r.check('identifiant retenu pour la prochaine fois', await page.evaluate(() => localStorage.getItem('ph_dernier_identifiant')), '"awa"');
     r.check('aucune erreur JavaScript', erreurs, []);
   } finally { await app.fermer(); }

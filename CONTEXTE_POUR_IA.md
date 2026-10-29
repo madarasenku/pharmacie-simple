@@ -1,7 +1,7 @@
 # Pharmacie Simple — dossier de passation (contexte pour une IA ou un développeur)
 
 > À lire EN ENTIER avant de modifier le code. Il complète le README (qui s'adresse à l'utilisatrice).
-> Version applicative : **1.3.0** · cache du service worker : **pharmacie-simple-v4** · base attendue : **6**
+> Version applicative : **1.4.0** · cache du service worker : **pharmacie-simple-v5** · base attendue : **7**
 
 ## 1. Vue d'ensemble
 
@@ -56,7 +56,11 @@
 
 ## 4. Modèle de données (résumé)
 
-- `programmes` : origines du stock. **Vente** = celle qui a `est_vente = true` ; les autres (PNLP, GRAT, PF…) sont gratuites.
+- `programmes` : origines du stock. **Vente** = celle qui a `est_vente = true`. Les programmes `recouvrable = true` (PHPSP) sont
+  **payants** comme la Vente (caisse, modes de paiement, reçu) mais comptés à part ; les autres (PNLP, GRAT, PF…) sont gratuits.
+  Côté site : `estPayant(g)` ; prix d'une ligne : `prixDe(p, origine)` = `produits_programmes.prix_vente` sinon `produits.prix_vente`
+  (même règle côté serveur dans `enregistrer_vente`). Le point « normal » ne compte que la Vente.
+- `profiles.nom` : toujours en majuscules (déclencheur `profiles_nom_majuscule`).
 - `produits` ↔ `produits_programmes` (un produit peut être dans plusieurs origines) ; on ne peut pas détacher une
   origine qui a encore du stock (déclencheur `produits_programmes_detachement`).
 - `lots` (produit, origine, numéro, péremption, quantité) : **le stock est la somme des lots**. Sortie FEFO : le lot

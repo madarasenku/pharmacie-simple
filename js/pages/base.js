@@ -7,6 +7,7 @@ export async function render(el, ctx) {
   let voirInactifs = false;
   let produits = [];
   let liens = new Set();
+  let prixOrigine = new Map(); // « produit:programme » → prix propre à un programme recouvrable
   // Sélection pour supprimer plusieurs éléments d'un coup
   const choixProduits = new Set();
   const choixProgrammes = new Set();
@@ -15,10 +16,11 @@ export async function render(el, ctx) {
     await ctx.rechargerContexte();
     const [p, l] = await Promise.all([
       tout(() => sb.from('produits').select('*').order('designation').order('id')),
-      tout(() => sb.from('produits_programmes').select('produit_id, programme_id').order('produit_id').order('programme_id'))
+      tout(() => sb.from('produits_programmes').select('produit_id, programme_id, prix_vente').order('produit_id').order('programme_id'))
     ]);
     produits = p;
     liens = new Set(l.map((x) => x.produit_id + ':' + x.programme_id));
+    prixOrigine = new Map(l.filter((x) => x.prix_vente !== null && x.prix_vente !== undefined).map((x) => [x.produit_id + ':' + x.programme_id, Number(x.prix_vente)]));
   }
 
   function dessiner() {
@@ -35,8 +37,9 @@ export async function render(el, ctx) {
           <button class="btn btn-danger ${choixProgrammes.size ? '' : 'hidden'}" id="suppr-prog">Supprimer (${choixProgrammes.size})</button>
           <button class="btn btn-v" id="nv-prog">+ Nouveau programme</button></div></div>
         <div class="table-box"><table class="tbl">
-          <thead><tr><th style="width:36px"><span class="sr">Choisir</span></th><th>Nom</th><th>Sigle</th><th>Rapport</th><th>Catégories de bénéficiaires</th><th>Envoyer à</th><th class="r">Produits</th><th>État</th><th></th></tr></thead>
+          <thead><tr><th style="width:36px"><span class="sr">Choisir</span></th><th>Nom</th><th>Sigle</th><th>Type</th><th>Rapport</th><th>Catégories de bénéficiaires</th><th>Envoyer à</th><th class="r">Produits</th><th>État</th><th></th></tr></thead>
           <tbody>${progs.map((g) => `<tr><td>${g.est_vente ? '' : `<input type="checkbox" class="case" data-choix-prog="${g.id}" ${choixProgrammes.has(g.id) ? 'checked' : ''} aria-label="Choisir ${esc(g.nom)}">`}</td><td><strong>${esc(g.nom)}</strong>${g.est_vente ? ' <span class="badge b-ok">Vente</span>' : ''}</td><td class="num">${esc(g.sigle)}</td>
+            <td><span class="badge ${g.est_vente ? 'b-ok' : g.recouvrable ? 'b-rec' : 'b-prog'}">${g.est_vente ? 'Vente' : g.recouvrable ? 'Recouvrable (payant)' : 'Gratuit'}</span></td>
             <td>${esc(g.frequence)}</td><td class="small">${esc((g.categories || []).join(', '))}</td><td class="small">${esc(g.destinataire || '')}</td>
             <td class="num r">${produits.filter((p) => liens.has(p.id + ':' + g.id)).length}</td>
             <td><span class="badge ${g.actif ? 'b-ok' : 'b-low'}">${g.actif ? 'Actif' : 'Inactif'}</span></td>
@@ -57,7 +60,7 @@ export async function render(el, ctx) {
         </div>
         <div class="small muted" style="padding:8px 18px">Les prix et le minimum se modifient directement dans le tableau (enregistrement automatique).</div>
         <div class="table-box"><table class="tbl">
-          <thead><tr><th style="width:36px"><input type="checkbox" class="case" id="tout-choisir" aria-label="Choisir tous les produits affichés"></th><th>Produit</th><th>Code-barres</th><th class="r">Prix achat</th><th class="r">Prix vente</th><th class="r">Min.</th>
+          <thead><tr><th style="width:36px"><input type="checkbox" class="case" id="tout-choisir" aria-label="Choisir tous les produits affichés"></th><th>Produit</th><th>Code-barres</th><th class="r">Prix achat</th><th class="r">Prix vente</th>${progs.filter((g) => g.recouvrable).map((g) => `<th class="r" style="color:var(--bleu)" title="Prix de vente ${esc(g.nom)} (vide = prix de vente normal)">Prix ${esc(g.sigle)}</th>`).join('')}<th class="r">Min.</th>
             ${progs.map((g) => `<th class="${g.est_vente ? '' : 'prog-col'}" style="text-align:center" title="${esc(g.nom)}">${esc(g.est_vente ? 'Vente' : g.sigle)}</th>`).join('')}<th></th></tr></thead>
           <tbody>${liste.map((p) => `<tr style="${p.actif ? '' : 'opacity:.55'}">
             <td><input type="checkbox" class="case" data-choix-prod="${p.id}" ${choixProduits.has(p.id) ? 'checked' : ''} aria-label="Choisir ${esc(p.designation)}"></td>
@@ -65,6 +68,9 @@ export async function render(el, ctx) {
             <td class="num small">${esc(p.code_barres || '—')}</td>
             <td class="r"><input class="in num r" style="width:90px" data-champ="prix_achat" data-id="${p.id}" value="${Number(p.prix_achat)}" aria-label="Prix d'achat ${esc(p.designation)}"></td>
             <td class="r"><input class="in num r" style="width:90px;${Number(p.prix_vente) ? '' : 'background:#FFF0CC'}" data-champ="prix_vente" data-id="${p.id}" value="${Number(p.prix_vente)}" aria-label="Prix de vente ${esc(p.designation)}"></td>
+            ${progs.filter((g) => g.recouvrable).map((g) => liens.has(p.id + ':' + g.id)
+              ? `<td class="r"><input class="in num r" style="width:90px" data-prix-origine="${p.id}:${g.id}" value="${prixOrigine.has(p.id + ':' + g.id) ? prixOrigine.get(p.id + ':' + g.id) : ''}" placeholder="${Number(p.prix_vente)}" aria-label="Prix ${esc(g.sigle)} ${esc(p.designation)}"></td>`
+              : '<td class="r muted">—</td>').join('')}
             <td class="r"><input class="in num r" style="width:70px" data-champ="stock_min" data-id="${p.id}" value="${p.stock_min}" aria-label="Stock minimum ${esc(p.designation)}"></td>
             ${progs.map((g) => `<td style="text-align:center"><input type="checkbox" style="width:22px;height:22px;accent-color:${g.est_vente ? 'var(--vert)' : 'var(--violet)'}" data-lien="${p.id}:${g.id}" ${liens.has(p.id + ':' + g.id) ? 'checked' : ''} aria-label="${esc(p.designation)} : ${esc(g.nom)}"></td>`).join('')}
             <td><button class="btn btn-sm" data-prod="${p.id}">Modifier</button></td></tr>`).join('')}</tbody>
@@ -96,6 +102,18 @@ export async function render(el, ctx) {
         p[champ] = v;
         i.style.background = champ === 'prix_vente' && !v ? '#FFF0CC' : '#E0F1E8';
         setTimeout(() => { if (i.isConnected && !(champ === 'prix_vente' && !v)) i.style.background = ''; }, 900);
+      } catch (e) { erreur(e); }
+    });
+    // Prix propre à un programme recouvrable (vide = on revient au prix de vente normal)
+    el.querySelectorAll('[data-prix-origine]').forEach((i) => i.onchange = async () => {
+      const [produit_id, programme_id] = i.dataset.prixOrigine.split(':').map(Number);
+      const v = i.value.trim() === '' ? null : nombre(i.value);
+      if (v !== null && (Number.isNaN(v) || v < 0)) { toast('Prix invalide.', 'warn'); return; }
+      try {
+        await qMaj(sb.from('produits_programmes').update({ prix_vente: v }).eq('produit_id', produit_id).eq('programme_id', programme_id).select('produit_id'));
+        if (v === null) prixOrigine.delete(i.dataset.prixOrigine); else prixOrigine.set(i.dataset.prixOrigine, v);
+        i.style.background = '#E0F1E8';
+        setTimeout(() => { if (i.isConnected) i.style.background = ''; }, 900);
       } catch (e) { erreur(e); }
     });
     el.querySelectorAll('[data-lien]').forEach((c) => c.onchange = async () => {
@@ -191,6 +209,9 @@ export async function render(el, ctx) {
         <div><label class="lbl" for="g-sigle">Sigle</label><input class="in" id="g-sigle" value="${esc(g?.sigle || '')}" placeholder="Ex. : PNT" ${g?.est_vente ? 'disabled' : ''}></div>
         <div><label class="lbl" for="g-freq">Rapport</label><select class="in" id="g-freq"><option value="mensuel">Mensuel</option><option value="trimestriel" ${g?.frequence === 'trimestriel' ? 'selected' : ''}>Trimestriel</option></select></div>
       </div>
+      ${g?.est_vente ? '' : `<div><label class="lbl" for="g-type">Type</label><select class="in" id="g-type">
+        <option value="gratuit">Gratuit : médicaments donnés aux patients</option>
+        <option value="recouvrable" ${g?.recouvrable ? 'selected' : ''}>Recouvrable : médicaments vendus, avec leur propre prix et leur propre point</option></select></div>`}
       <div><label class="lbl" for="g-cat">Catégories de bénéficiaires (séparées par des virgules)</label><input class="in" id="g-cat" value="${esc((g?.categories || []).join(', '))}" placeholder="Ex. : Enfant < 5 ans, Femme enceinte"></div>
       <div><label class="lbl" for="g-dest">Envoyer le rapport à</label><input class="in" id="g-dest" value="${esc(g?.destinataire || '')}" placeholder="District / coordination du programme"></div>
       ${g && !g.est_vente ? `<label class="check"><input type="checkbox" id="g-actif" ${g.actif ? 'checked' : ''}> Programme actif</label>` : ''}
@@ -204,7 +225,10 @@ export async function render(el, ctx) {
         categories: m.el.querySelector('#g-cat').value.split(',').map((s) => s.trim()).filter(Boolean),
         destinataire: m.el.querySelector('#g-dest').value.trim() || null
       };
-      if (!g?.est_vente) ligne.sigle = sigle;
+      if (!g?.est_vente) {
+        ligne.sigle = sigle;
+        ligne.recouvrable = m.el.querySelector('#g-type').value === 'recouvrable';
+      }
       const actif = m.el.querySelector('#g-actif');
       if (actif) ligne.actif = actif.checked;
       try {
