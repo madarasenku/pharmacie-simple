@@ -9,8 +9,8 @@
    (tests/deploiement.test.js vérifie que les trois concordent).
    ============================================================ */
 
-const APP_VERSION = '1.2.0';
-const CACHE = 'pharmacie-simple-v3';
+const APP_VERSION = '1.3.0';
+const CACHE = 'pharmacie-simple-v4';
 const v = (url) => url + '?v=' + APP_VERSION;
 const famille = (nom) => nom.replace(/[\d.]+$/, '');
 

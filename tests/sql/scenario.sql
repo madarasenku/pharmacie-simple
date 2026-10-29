@@ -270,7 +270,7 @@ do $$ begin
   assert (select details ->> 'apres' from journal where action = 'prix' order by id desc limit 1) = '125.00', 'changement de prix journalisé';
   perform enregistrer_entree(jsonb_build_object('produit_id', pg_temp.v('amox'), 'programme_id', pg_temp.v('vente'), 'quantite', 1, 'prix_vente', 130));
   assert (select count(*) from journal where action = 'prix') = 2, 'prix changé à l''entrée : une seule ligne de journal de plus';
-  assert (select (valeur ->> 'version')::int from parametres where cle = 'version_base') = 5, 'version de la base';
+  assert (select (valeur ->> 'version')::int from parametres where cle = 'version_base') = 6, 'version de la base';
 end $$;
 select pg_temp.qui('awa');
 do $$ declare n int; begin
@@ -279,7 +279,43 @@ do $$ declare n int; begin
   assert n = 0, 'un vendeur sans droit « prix » ne change pas un prix';
 end $$;
 
--- ---------- 10. Mot de passe temporaire ----------
+-- ---------- 10. Suppression de produits et de programmes ----------
+select pg_temp.qui('awa');
+do $$ begin
+  perform pg_temp.refus('select supprimer_produits(array[1])', 'non autorisée (base)');
+end $$;
+select pg_temp.qui('gerant');
+do $$ declare r jsonb; neuf int; vide int; g_neuf int; g_vide int; begin
+  insert into produits (designation) values ('ZZ JAMAIS UTILISE') returning id into neuf;
+  insert into produits (designation) values ('ZZ VIDE') returning id into vide;
+  insert into produits_programmes (produit_id, programme_id) values (neuf, pg_temp.v('vente'));
+  -- produit utilisé puis remis à zéro : historique, plus de stock
+  perform enregistrer_entree(jsonb_build_object('produit_id', vide, 'programme_id', pg_temp.v('vente'), 'quantite', 2));
+  perform valider_inventaire(jsonb_build_object('comptes', jsonb_build_array(jsonb_build_object('lot_id', (select id from lots where produit_id = vide), 'reel', 0))));
+  r := supprimer_produits(array[neuf, vide, pg_temp.v('amox'), 999999]);
+  assert r -> 'supprimes' = '["ZZ JAMAIS UTILISE"]' and r -> 'desactives' = '["ZZ VIDE"]' and r -> 'refuses' = '["ZZ TEST AMOXICILLINE"]', 'produits : ' || r::text;
+  assert not exists (select 1 from produits where id = neuf), 'produit jamais utilisé : effacé';
+  assert not exists (select 1 from produits_programmes where produit_id = neuf), 'ses rattachements aussi';
+  assert (select not actif from produits where id = vide), 'produit avec historique : désactivé, pas effacé';
+  assert (select count(*) from mouvements where produit_id = vide) = 2, 'son historique reste intact';
+  assert (select actif from produits where id = pg_temp.v('amox')), 'produit encore en stock : intact';
+
+  insert into programmes (code, nom, sigle) values ('ZZ1', 'ZZ Programme neuf', 'ZZN') returning id into g_neuf;
+  insert into programmes (code, nom, sigle) values ('ZZ2', 'ZZ Programme vide', 'ZZV') returning id into g_vide;
+  insert into produits_programmes (produit_id, programme_id) values (pg_temp.v('amox'), g_neuf), (pg_temp.v('amox'), g_vide);
+  perform enregistrer_entree(jsonb_build_object('produit_id', pg_temp.v('amox'), 'programme_id', g_vide, 'quantite', 1, 'numero_lot', 'ZZV'));
+  perform valider_inventaire(jsonb_build_object('comptes', jsonb_build_array(jsonb_build_object('lot_id', (select id from lots where numero = 'ZZV'), 'reel', 0))));
+  r := supprimer_programmes(array[g_neuf, g_vide, pg_temp.v('pnlp'), pg_temp.v('vente')]);
+  assert r -> 'supprimes' = '["ZZ Programme neuf"]' and r -> 'desactives' = '["ZZ Programme vide"]'
+     and (r -> 'refuses') @> '["Paludisme"]' and jsonb_array_length(r -> 'refuses') = 2, 'programmes : ' || r::text;
+  assert not exists (select 1 from programmes where id = g_neuf), 'programme jamais utilisé : effacé';
+  assert exists (select 1 from produits where id = pg_temp.v('amox')), 'ses produits ne sont pas touchés';
+  assert (select not actif from programmes where id = g_vide), 'programme avec historique : désactivé';
+  assert (select actif from programmes where est_vente), 'Vente jamais supprimée';
+  assert (select count(*) from journal where action in ('produits_supprimes', 'programmes_supprimes')) = 2, 'suppressions au journal';
+end $$;
+
+-- ---------- 11. Mot de passe temporaire ----------
 select pg_temp.qui('awa');
 select mot_de_passe_personnel_defini();
 do $$ begin
@@ -288,7 +324,7 @@ end $$;
 
 reset role;
 
--- ---------- 11. Hygiène de sécurité (comme les conseils Supabase) ----------
+-- ---------- 12. Hygiène de sécurité (comme les conseils Supabase) ----------
 do $$ declare x text; begin
   select string_agg(tablename, ', ') into x from pg_tables where schemaname = 'public' and not rowsecurity;
   assert x is null, 'tables sans RLS : ' || x;

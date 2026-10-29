@@ -57,7 +57,8 @@ function donneesDeBase() {
   const programmes = [
     { id: 1, code: 'VENTE', nom: 'Vente (produits recouvrables)', sigle: 'VENTE', est_vente: true, frequence: 'mensuel', categories: [], actif: true, ordre: 0 },
     { id: 2, code: 'PNLP', nom: 'Paludisme', sigle: 'PNLP', est_vente: false, frequence: 'mensuel', categories: ['Enfant < 5 ans', 'Femme enceinte', 'Autre'], actif: true, ordre: 10 },
-    { id: 3, code: 'GRAT', nom: 'Gratuité ciblée', sigle: 'GRAT', est_vente: false, frequence: 'mensuel', categories: ['Enfant < 5 ans', 'Femme enceinte'], actif: true, ordre: 20 }
+    { id: 3, code: 'GRAT', nom: 'Gratuité ciblée', sigle: 'GRAT', est_vente: false, frequence: 'mensuel', categories: ['Enfant < 5 ans', 'Femme enceinte'], actif: true, ordre: 20 },
+    { id: 4, code: 'PF', nom: 'Planification familiale', sigle: 'PF', est_vente: false, frequence: 'mensuel', categories: [], actif: true, ordre: 30 }
   ];
   const produits = [
     { id: 1, designation: 'PARACETAMOL 500 MG CP', code_barres: '6000000000028', presentation: 'Plaquette', prix_achat: 10, prix_vente: 25, stock_min: 20, actif: true },
@@ -83,7 +84,7 @@ function donneesDeBase() {
       { cle: 'droits_responsable', valeur: { vendre: true, entree: true, credit: true, programmes: true, corriger: true, annuler: true, prix: false, rapports: true, base: false } },
       { cle: 'pharmacie', valeur: { nom: 'Pharmacie Test', region: 'SUD COMOÉ', district: 'GRAND-BASSAM', etablissement: 'CSR TEST' } },
       { cle: 'derniere_sauvegarde', valeur: { date: new Date().toISOString(), par: 'Gérante Test' } },
-      { cle: 'version_base', valeur: { version: 5 } }
+      { cle: 'version_base', valeur: { version: 6 } }
     ],
     programmes, produits, lots, produits_programmes: liens,
     clients: [{ id: 1, nom: 'TRAORE Adama', telephone: '0700000001', plafond: 10000 }],
@@ -167,6 +168,39 @@ function rpcParDefaut(db, etat) {
     },
     annuler_commande: (a) => { const c = db.commandes.find((x) => x.id === a.p_commande); c.statut = 'annulee'; return null; },
     clore_commande: (a) => { const c = db.commandes.find((x) => x.id === a.p_commande); c.statut = 'soldee'; return null; },
+    // Même règle que le serveur : jamais utilisé → effacé ; historique → masqué ; encore du stock → refusé
+    supprimer_produits: (a) => {
+      const r = { supprimes: [], desactives: [], refuses: [] };
+      for (const id of a.p_ids) {
+        const p = db.produits.find((x) => x.id === id);
+        if (!p) continue;
+        const ls = db.lots.filter((l) => l.produit_id === id);
+        if (ls.some((l) => l.quantite > 0)) r.refuses.push(p.designation);
+        else if (ls.length || db.mouvements.some((m) => m.produit_id === id)) { p.actif = false; r.desactives.push(p.designation); }
+        else {
+          db.produits = db.produits.filter((x) => x.id !== id);
+          db.produits_programmes = db.produits_programmes.filter((x) => x.produit_id !== id);
+          r.supprimes.push(p.designation);
+        }
+      }
+      return r;
+    },
+    supprimer_programmes: (a) => {
+      const r = { supprimes: [], desactives: [], refuses: [] };
+      for (const id of a.p_ids) {
+        const g = db.programmes.find((x) => x.id === id);
+        if (!g) continue;
+        const ls = db.lots.filter((l) => l.programme_id === id);
+        if (g.est_vente || ls.some((l) => l.quantite > 0)) r.refuses.push(g.nom);
+        else if (ls.length) { g.actif = false; r.desactives.push(g.nom); }
+        else {
+          db.programmes = db.programmes.filter((x) => x.id !== id);
+          db.produits_programmes = db.produits_programmes.filter((x) => x.programme_id !== id);
+          r.supprimes.push(g.nom);
+        }
+      }
+      return r;
+    },
     valider_inventaire: (a) => ({ corrections: a.p.comptes.filter((c) => c.reel !== c.attendu).length, lots_ajoutes: a.p.nouveaux.filter((n) => n.quantite > 0).length })
   };
 }

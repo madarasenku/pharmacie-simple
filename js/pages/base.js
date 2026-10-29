@@ -1,5 +1,5 @@
 // Base : programmes et produits (prix, code-barres, rattachement aux programmes).
-import { esc, fmt, q, qMaj, tout, erreur, toast, modal, correspond, entier, nombre, csv, telecharger } from '../util.js';
+import { esc, fmt, q, qMaj, rpc, tout, erreur, toast, modal, correspond, entier, nombre, csv, telecharger } from '../util.js';
 
 export async function render(el, ctx) {
   const { sb } = ctx;
@@ -7,6 +7,9 @@ export async function render(el, ctx) {
   let voirInactifs = false;
   let produits = [];
   let liens = new Set();
+  // Sélection pour supprimer plusieurs éléments d'un coup
+  const choixProduits = new Set();
+  const choixProgrammes = new Set();
 
   async function charger() {
     await ctx.rechargerContexte();
@@ -28,10 +31,12 @@ export async function render(el, ctx) {
         <div class="small muted">Créez les programmes une fois, puis cochez pour chaque produit la vente et le ou les programmes qui le fournissent.</div></div></div>
 
       <section class="card">
-        <div class="card-head"><h2>Programmes</h2><button class="btn btn-v" id="nv-prog">+ Nouveau programme</button></div>
+        <div class="card-head"><h2>Programmes</h2><div class="inline">
+          <button class="btn btn-danger ${choixProgrammes.size ? '' : 'hidden'}" id="suppr-prog">Supprimer (${choixProgrammes.size})</button>
+          <button class="btn btn-v" id="nv-prog">+ Nouveau programme</button></div></div>
         <div class="table-box"><table class="tbl">
-          <thead><tr><th>Nom</th><th>Sigle</th><th>Rapport</th><th>Catégories de bénéficiaires</th><th>Envoyer à</th><th class="r">Produits</th><th>État</th><th></th></tr></thead>
-          <tbody>${progs.map((g) => `<tr><td><strong>${esc(g.nom)}</strong>${g.est_vente ? ' <span class="badge b-ok">Vente</span>' : ''}</td><td class="num">${esc(g.sigle)}</td>
+          <thead><tr><th style="width:36px"><span class="sr">Choisir</span></th><th>Nom</th><th>Sigle</th><th>Rapport</th><th>Catégories de bénéficiaires</th><th>Envoyer à</th><th class="r">Produits</th><th>État</th><th></th></tr></thead>
+          <tbody>${progs.map((g) => `<tr><td>${g.est_vente ? '' : `<input type="checkbox" class="case" data-choix-prog="${g.id}" ${choixProgrammes.has(g.id) ? 'checked' : ''} aria-label="Choisir ${esc(g.nom)}">`}</td><td><strong>${esc(g.nom)}</strong>${g.est_vente ? ' <span class="badge b-ok">Vente</span>' : ''}</td><td class="num">${esc(g.sigle)}</td>
             <td>${esc(g.frequence)}</td><td class="small">${esc((g.categories || []).join(', '))}</td><td class="small">${esc(g.destinataire || '')}</td>
             <td class="num r">${produits.filter((p) => liens.has(p.id + ':' + g.id)).length}</td>
             <td><span class="badge ${g.actif ? 'b-ok' : 'b-low'}">${g.actif ? 'Actif' : 'Inactif'}</span></td>
@@ -46,14 +51,16 @@ export async function render(el, ctx) {
             <label class="sr" for="rech">Chercher</label><input class="in" id="rech" type="search" placeholder="Chercher un produit" value="${esc(recherche)}" style="max-width:280px">
             <label class="check small"><input type="checkbox" id="inactifs" ${voirInactifs ? 'checked' : ''}> Inactifs</label>
             <button class="btn" id="export">Exporter</button>
+            <button class="btn btn-danger ${choixProduits.size ? '' : 'hidden'}" id="suppr-prod">Supprimer la sélection (${choixProduits.size})</button>
             <button class="btn btn-p" id="nv-prod">+ Nouveau produit</button>
           </div>
         </div>
         <div class="small muted" style="padding:8px 18px">Les prix et le minimum se modifient directement dans le tableau (enregistrement automatique).</div>
         <div class="table-box"><table class="tbl">
-          <thead><tr><th>Produit</th><th>Code-barres</th><th class="r">Prix achat</th><th class="r">Prix vente</th><th class="r">Min.</th>
+          <thead><tr><th style="width:36px"><input type="checkbox" class="case" id="tout-choisir" aria-label="Choisir tous les produits affichés"></th><th>Produit</th><th>Code-barres</th><th class="r">Prix achat</th><th class="r">Prix vente</th><th class="r">Min.</th>
             ${progs.map((g) => `<th class="${g.est_vente ? '' : 'prog-col'}" style="text-align:center" title="${esc(g.nom)}">${esc(g.est_vente ? 'Vente' : g.sigle)}</th>`).join('')}<th></th></tr></thead>
           <tbody>${liste.map((p) => `<tr style="${p.actif ? '' : 'opacity:.55'}">
+            <td><input type="checkbox" class="case" data-choix-prod="${p.id}" ${choixProduits.has(p.id) ? 'checked' : ''} aria-label="Choisir ${esc(p.designation)}"></td>
             <td style="min-width:240px">${esc(p.designation)}${p.presentation ? `<br><span class="small muted">${esc(p.presentation)}</span>` : ''}</td>
             <td class="num small">${esc(p.code_barres || '—')}</td>
             <td class="r"><input class="in num r" style="width:90px" data-champ="prix_achat" data-id="${p.id}" value="${Number(p.prix_achat)}" aria-label="Prix d'achat ${esc(p.designation)}"></td>
@@ -103,10 +110,77 @@ export async function render(el, ctx) {
         }
       } catch (e) { c.checked = !c.checked; erreur(e); }
     });
+    // Sélection : on met à jour les boutons sans redessiner le tableau (on garde la position dans la liste)
+    const majSelection = () => {
+      const bp = el.querySelector('#suppr-prod');
+      bp.classList.toggle('hidden', !choixProduits.size);
+      bp.textContent = `Supprimer la sélection (${choixProduits.size})`;
+      const bg = el.querySelector('#suppr-prog');
+      bg.classList.toggle('hidden', !choixProgrammes.size);
+      bg.textContent = `Supprimer (${choixProgrammes.size})`;
+      const tc = el.querySelector('#tout-choisir');
+      const nb = liste.filter((p) => choixProduits.has(p.id)).length;
+      tc.checked = liste.length > 0 && nb === liste.length;
+      tc.indeterminate = nb > 0 && nb < liste.length;
+    };
+    el.querySelectorAll('[data-choix-prod]').forEach((c) => c.onchange = () => {
+      const id = Number(c.dataset.choixProd);
+      if (c.checked) choixProduits.add(id); else choixProduits.delete(id);
+      majSelection();
+    });
+    el.querySelectorAll('[data-choix-prog]').forEach((c) => c.onchange = () => {
+      const id = Number(c.dataset.choixProg);
+      if (c.checked) choixProgrammes.add(id); else choixProgrammes.delete(id);
+      majSelection();
+    });
+    el.querySelector('#tout-choisir').onchange = (e) => {
+      for (const p of liste) if (e.target.checked) choixProduits.add(p.id); else choixProduits.delete(p.id);
+      el.querySelectorAll('[data-choix-prod]').forEach((c) => { c.checked = e.target.checked; });
+      majSelection();
+    };
+    el.querySelector('#suppr-prod').onclick = () => supprimer('produits');
+    el.querySelector('#suppr-prog').onclick = () => supprimer('programmes');
+    majSelection();
+
     el.querySelector('#export').onclick = () => {
       const l = [['Désignation', 'Présentation', 'Code-barres', 'Prix achat', 'Prix vente', 'Minimum', ...ctx.programmes.map((g) => g.sigle), 'Actif']];
       produits.forEach((p) => l.push([p.designation, p.presentation, p.code_barres, p.prix_achat, p.prix_vente, p.stock_min, ...ctx.programmes.map((g) => liens.has(p.id + ':' + g.id) ? 'oui' : ''), p.actif ? 'oui' : 'non']));
       telecharger('produits.csv', csv(l));
+    };
+  }
+
+  // Suppression d'un ou plusieurs éléments. Le serveur décide pour chacun :
+  // jamais utilisé → effacé ; déjà utilisé → masqué (inactif) ; encore du stock → laissé tel quel.
+  function supprimer(quoi) {
+    const estProduit = quoi === 'produits';
+    const ids = [...(estProduit ? choixProduits : choixProgrammes)];
+    if (!ids.length) return;
+    const noms = ids.map((id) => (estProduit ? produits.find((p) => p.id === id)?.designation : ctx.programmes.find((g) => g.id === id)?.nom)).filter(Boolean);
+    const m = modal(`Supprimer ${ids.length} ${estProduit ? 'produit(s)' : 'programme(s)'}`, `
+      <ul class="small" style="margin:0;padding-left:18px;max-height:220px;overflow:auto">${noms.slice(0, 30).map((n) => `<li>${esc(n)}</li>`).join('')}${noms.length > 30 ? `<li>… et ${noms.length - 30} autre(s)</li>` : ''}</ul>
+      <div class="small" style="line-height:1.5">
+        • Ceux qui n’ont <strong>jamais été utilisés</strong> sont effacés.<br>
+        • Ceux qui ont déjà un <strong>historique</strong> (ventes, entrées, commandes) sont <strong>masqués</strong> au lieu d’être effacés, pour que vos rapports passés restent justes. Vous pourrez les réactiver.<br>
+        • Ceux qui ont <strong>encore du stock</strong> ne sont pas touchés : mettez d’abord leur stock à zéro dans l’Inventaire.
+        ${estProduit ? '' : '<br>• Les produits du programme ne sont pas supprimés : ils perdent seulement la case de ce programme.'}
+      </div>
+      <div class="inline" style="justify-content:flex-end"><button class="btn" data-fermer>Annuler</button><button class="btn btn-p" id="ok" style="background:var(--rouge);border-color:var(--rouge)">Supprimer</button></div>`);
+    m.el.querySelector('#ok').onclick = async (e) => {
+      e.target.disabled = true;
+      try {
+        const r = await rpc(sb, estProduit ? 'supprimer_produits' : 'supprimer_programmes', { p_ids: ids });
+        m.fermer();
+        (estProduit ? choixProduits : choixProgrammes).clear();
+        await charger();
+        dessiner();
+        const liste = (titre, tab, classe) => (tab.length ? `<div class="alert ${classe}" style="font-weight:400"><strong>${titre} (${tab.length})</strong><br>${tab.map(esc).join(', ')}</div>` : '');
+        modal('Suppression terminée', `
+          ${liste('Effacés', r.supprimes, 'alert-ok')}
+          ${liste('Masqués car ils ont un historique (case « Inactifs » pour les revoir)', r.desactives, 'alert-warn')}
+          ${liste('Non supprimés car ils ont encore du stock', r.refuses, 'alert-err')}
+          ${!r.supprimes.length && !r.desactives.length && !r.refuses.length ? '<div class="muted">Rien n’a changé.</div>' : ''}
+          <div class="inline" style="justify-content:flex-end"><button class="btn btn-p" data-fermer>OK</button></div>`);
+      } catch (err) { e.target.disabled = false; erreur(err); }
     };
   }
 
