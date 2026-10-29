@@ -129,7 +129,7 @@ export async function render(el, ctx) {
         <div class="small muted">Comptez ce qui est réellement sur les étagères. Les écarts deviennent des corrections ; un produit trouvé sans stock enregistré devient votre stock de départ. Les lots que vous ne comptez pas ne sont pas modifiés.</div></div>
         <div class="inline"><button class="btn" id="feuille">Imprimer la feuille de comptage</button></div></div>
       <div class="origines" role="group" aria-label="Origine à compter">
-        ${origines.map((o) => `<button class="org ${o.id === origine ? (o.est_vente ? 'on' : 'on-v') : ''}" data-origine="${o.id}"><strong>${esc(o.est_vente ? 'Vente' : o.sigle)}</strong><span class="small">${esc(o.est_vente ? 'stock payant' : o.nom)}</span></button>`).join('')}
+        ${origines.map((o) => `<button class="org ${o.id === origine ? (o.est_vente ? 'on' : o.recouvrable ? 'on-r' : 'on-v') : ''}" data-origine="${o.id}"><strong>${esc(o.est_vente ? 'Vente' : o.sigle)}</strong><span class="small">${esc(o.est_vente ? 'stock payant' : o.recouvrable ? o.nom + ' · payant' : o.nom)}</span></button>`).join('')}
       </div>
       ${Object.keys(brouillon.comptes).length || brouillon.nouveaux.length ? `<div class="alert alert-ok">Comptage en cours depuis le ${fmtDate(brouillon.debut)} — il est gardé sur cet appareil jusqu’à la validation.
         <button class="link" id="recommencer">Tout effacer et recommencer</button></div>` : ''}

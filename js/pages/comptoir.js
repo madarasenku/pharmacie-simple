@@ -1,7 +1,7 @@
-// Comptoir : vendre (stock Vente) ou distribuer gratuitement (stock d'un programme).
+// Comptoir : vendre (stock Vente ou programme recouvrable comme PHPSP) ou distribuer gratuitement (programme).
 import {
   esc, fmt, fmtF, fmtPeremption, q, rpc, erreur, toast, modal, imprimer, chargerCatalogue,
-  correspond, trancheAge, TRANCHES, entier, fmtDateHeure, local, estErreurReseau, nouvelId, fmtDate
+  correspond, trancheAge, TRANCHES, entier, fmtDateHeure, local, estErreurReseau, nouvelId, fmtDate, estPayant, prixDe
 } from '../util.js';
 import { mettreEnFile } from '../hors-ligne.js';
 
@@ -15,7 +15,8 @@ let etat = null;
 
 export async function render(el, ctx) {
   const { sb } = ctx;
-  const origines = ctx.programmes.filter((p) => p.actif && (p.est_vente ? ctx.peut('vendre') : ctx.peut('programmes')));
+  const origines = ctx.programmes.filter((p) => p.actif && (estPayant(p) ? ctx.peut('vendre') : ctx.peut('programmes')));
+  const classeOrigine = (o) => (o.est_vente ? 'on' : o.recouvrable ? 'on-r' : 'on-v');
   if (!origines.length) {
     el.innerHTML = '<div class="alert alert-warn">Aucune origine disponible pour votre compte.</div>';
     return;
@@ -95,7 +96,7 @@ export async function render(el, ctx) {
     const m = modal(p.designation, `
       <p class="muted" style="margin:0">Ce produit existe dans plusieurs stocks. De quel stock le sortir ?</p>
       ${dispo.map((o) => `<button class="btn" style="justify-content:space-between" data-o="${o.id}">
-        <span>${esc(o.est_vente ? 'Vente (payant)' : o.nom + ' (gratuit)')}</span><span class="num muted">stock ${stockDe(p, o.id)}</span></button>`).join('')}`);
+        <span>${esc(o.est_vente ? 'Vente (payant)' : o.nom + (o.recouvrable ? ' (payant)' : ' (gratuit)'))}</span><span class="num muted">stock ${stockDe(p, o.id)}</span></button>`).join('')}`);
     m.el.querySelectorAll('[data-o]').forEach((b) => b.onclick = () => {
       const id = Number(b.dataset.o);
       m.fermer();
@@ -120,15 +121,18 @@ export async function render(el, ctx) {
   }
 
   function total() {
-    if (!prog()?.est_vente) return 0;
+    const pr = prog();
+    if (!estPayant(pr)) return 0;
     let t = 0;
-    for (const [id, n] of etat.panier) t += n * Number(prodPar(id)?.prix_vente || 0);
+    for (const [id, n] of etat.panier) t += n * prixDe(prodPar(id), pr.id);
     return t;
   }
 
   function dessiner() {
     const pr = prog();
-    const estVente = pr.est_vente;
+    // « estVente » : origine payante (la Vente ou un programme recouvrable)
+    const estVente = estPayant(pr);
+    const prix = (p) => prixDe(p, pr.id);
     const listeProduits = catalogue
       .filter((p) => p.actif && p.origines[pr.id] && correspond(p, etat.recherche))
       .sort((a, b) => (stockDe(b) > 0) - (stockDe(a) > 0) || a.designation.localeCompare(b.designation, 'fr'))
@@ -143,9 +147,9 @@ export async function render(el, ctx) {
       <div class="stack">
         <div class="inline"><strong style="margin-right:6px">Ce patient est servi en :</strong>
           <div class="origines" role="group" aria-label="Origine des médicaments">
-            ${origines.map((o) => `<button type="button" class="org ${o.id === pr.id ? (o.est_vente ? 'on' : 'on-v') : ''}" data-origine="${o.id}">
+            ${origines.map((o) => `<button type="button" class="org ${o.id === pr.id ? classeOrigine(o) : ''}" data-origine="${o.id}">
               <span style="font-weight:700">${esc(o.est_vente ? 'Vente' : o.sigle)}</span>
-              <span class="small" style="opacity:.85">${esc(o.est_vente ? 'Payant' : o.nom + ' · gratuit')}</span></button>`).join('')}
+              <span class="small" style="opacity:.85">${esc(o.est_vente ? 'Payant' : o.nom + (o.recouvrable ? ' · payant' : ' · gratuit'))}</span></button>`).join('')}
           </div>
         </div>
         ${horsLigne ? `<div class="alert alert-warn" role="status">Hors ligne : stock tel qu’il était le ${esc(fmtDate(catalogue.date))} à ${esc(new Date(catalogue.date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }))}. Les ventes sont gardées sur l’appareil et envoyées au retour d’internet.</div>` : ''}
@@ -164,20 +168,20 @@ export async function render(el, ctx) {
             <label class="lbl" for="recherche">Chercher ou scanner un médicament</label>
             <input class="in scan" id="recherche" type="search" autocomplete="off" placeholder="Nom ou code-barres, puis Entrée" value="${esc(etat.recherche)}">
           </div>
-          <div class="inline" style="justify-content:space-between"><h2>${esc(estVente ? 'Médicaments en vente' : 'Médicaments du programme ' + pr.nom)}</h2>
+          <div class="inline" style="justify-content:space-between"><h2>${esc(pr.est_vente ? 'Médicaments en vente' : pr.recouvrable ? 'Médicaments ' + pr.nom + ' (recouvrable, payant)' : 'Médicaments du programme ' + pr.nom)}</h2>
             <span class="small muted">${listeProduits.length >= 60 ? '60 premiers résultats · affinez la recherche' : 'Touchez un produit pour l’ajouter'}</span></div>
           <div class="tiles">
             ${listeProduits.map((p) => {
               const reste = stockDe(p) - (etat.panier.get(p.id) || 0);
               const o = p.origines[pr.id];
               let badge = estVente ? 'b-ok' : 'b-prog';
-              let txt = (estVente ? 'Stock ' : pr.sigle + ' ') + reste;
+              let txt = (pr.est_vente ? 'Stock ' : pr.sigle + ' ') + reste;
               if (stockDe(p) <= 0) { badge = 'b-out'; txt = 'Rupture'; }
               else if (reste < p.stock_min) { badge = 'b-low'; txt = 'Reste ' + reste; }
               return `<button type="button" class="tile" data-ajout="${p.id}" ${reste <= 0 ? 'disabled' : ''}>
                 <span class="nom">${esc(p.designation)}</span>
                 ${o?.prochaine ? `<span class="small muted">Pér. ${fmtPeremption(o.prochaine)}</span>` : ''}
-                <span class="bas"><span class="num" style="font-weight:600;${estVente ? '' : 'color:var(--violet)'}">${estVente ? fmtF(p.prix_vente) : 'Gratuit'}</span>
+                <span class="bas"><span class="num" style="font-weight:600;${estVente ? '' : 'color:var(--violet)'}">${estVente ? fmtF(prix(p)) : 'Gratuit'}</span>
                 <span class="badge ${badge}">${esc(txt)}</span></span></button>`;
             }).join('') || '<div class="muted">Aucun produit trouvé.</div>'}
           </div>
@@ -185,7 +189,7 @@ export async function render(el, ctx) {
 
         <section class="col-side">
           <div class="card" style="display:flex;flex-direction:column">
-            <div class="card-head ${estVente ? '' : 'cart-head-prog'}"><h2>${esc(estVente ? 'Vente en cours' : 'Distribution · ' + pr.nom)}</h2>
+            <div class="card-head ${estVente ? '' : 'cart-head-prog'}"><h2>${esc(pr.est_vente ? 'Vente en cours' : pr.recouvrable ? 'Vente ' + pr.sigle + ' en cours' : 'Distribution · ' + pr.nom)}</h2>
               <span class="small">${lignes.reduce((s, l) => s + l.n, 0)} article(s)</span></div>
             ${sug ? `
               <div style="margin:14px 18px 0;padding:14px;border-radius:12px;background:#F6F2FC;border:1px solid #D5C6EE" class="stack">
@@ -198,14 +202,14 @@ export async function render(el, ctx) {
               <div class="cart-line">
                 <div style="flex:1 1 150px;min-width:0">
                   <div style="font-weight:600">${esc(p.designation)}</div>
-                  <div class="small muted num">${estVente ? fmtF(p.prix_vente) : 'Gratuit'} × ${n}</div>
+                  <div class="small muted num">${estVente ? fmtF(prix(p)) : 'Gratuit'} × ${n}</div>
                   <button class="link small" style="color:var(--rouge)" data-retirer="${p.id}">Retirer</button>
                 </div>
                 <div class="inline"><button class="qb" aria-label="Diminuer" data-moins="${p.id}">−</button>
                   <label class="sr" for="qte-${p.id}">Quantité ${esc(p.designation)}</label>
                   <input class="in num" id="qte-${p.id}" data-qte="${p.id}" inputmode="numeric" value="${n}" style="width:64px;min-height:44px;text-align:center;font-size:18px;font-weight:600;padding:0 4px">
                   <button class="qb" aria-label="Augmenter" data-plus="${p.id}">+</button></div>
-                <div class="num r" style="min-width:80px;font-weight:600">${estVente ? fmtF(n * p.prix_vente) : '0 F'}</div>
+                <div class="num r" style="min-width:80px;font-weight:600">${estVente ? fmtF(n * prix(p)) : '0 F'}</div>
               </div>`).join('') : '<div class="muted" style="padding:30px 18px;text-align:center">Aucun article. Cherchez, scannez ou touchez un produit.</div>'}
 
             <div style="padding:14px 18px 0">
@@ -378,22 +382,23 @@ export async function render(el, ctx) {
   async function valider() {
     const pr = prog();
     const bouton = el.querySelector('#valider');
-    if (pr.est_vente && etat.mode === 'credit' && !etat.client) return toast('Choisissez le client.', 'warn');
-    if (pr.est_vente && etat.mode !== 'credit') {
+    const payant = estPayant(pr);
+    if (payant && etat.mode === 'credit' && !etat.client) return toast('Choisissez le client.', 'warn');
+    if (payant && etat.mode !== 'credit') {
       const recu = entier(etat.recu);
       if (recu !== null && recu < total()) return toast('Le montant reçu est inférieur au total.', 'warn');
     }
     bouton.disabled = true;
     const tr = trancheAge(etat.patient.age, etat.patient.unite);
-    const lignesPanier = [...etat.panier].map(([id, n]) => ({ p: prodPar(id), n }));
+    const lignesPanier = [...etat.panier].map(([id, n]) => ({ p: prodPar(id), n, prix: prixDe(prodPar(id), pr.id) }));
     // Identifiant fixé une fois pour cette vente : un nouvel essai (coupure, double clic) ne crée pas de doublon
     if (!etat.ref) etat.ref = nouvelId();
     const charge = {
       ref_client: etat.ref,
       programme_id: pr.id,
-      mode: pr.est_vente ? etat.mode : 'gratuit',
+      mode: payant ? etat.mode : 'gratuit',
       client_id: etat.mode === 'credit' ? etat.client : null,
-      montant_recu: pr.est_vente && etat.mode !== 'credit' ? entier(etat.recu) : null,
+      montant_recu: payant && etat.mode !== 'credit' ? entier(etat.recu) : null,
       categorie: etat.categorie || null,
       patient: {
         nom: etat.patient.nom, age: etat.patient.age, unite: etat.patient.unite,
@@ -404,12 +409,12 @@ export async function render(el, ctx) {
     const clientNom = clients.find((c) => String(c.client_id) === String(etat.client))?.nom;
     const afficherTicket = (res, provisoire) => {
       const ticket = ticketHtml(ctx, { ...res, programme: pr, mode: charge.mode, recu: charge.montant_recu, lignes: lignesPanier, patient: charge.patient, client: clientNom, date: new Date(), provisoire });
-      const m = modal(provisoire ? 'Vente gardée hors ligne' : pr.est_vente ? 'Vente enregistrée' : 'Distribution enregistrée', `
+      const m = modal(provisoire ? 'Vente gardée hors ligne' : payant ? 'Vente enregistrée' : 'Distribution enregistrée', `
         ${provisoire
           ? '<div class="alert alert-warn">Pas d’internet : la vente est gardée sur cet appareil et sera envoyée automatiquement dès le retour du réseau.</div>'
-          : `<div class="alert ${pr.est_vente ? 'alert-ok' : 'alert-prog'}">${esc(res.numero)} · ${pr.est_vente ? fmtF(res.total) : 'gratuit'}</div>`}
+          : `<div class="alert ${payant ? 'alert-ok' : 'alert-prog'}">${esc(res.numero)} · ${payant ? fmtF(res.total) : 'gratuit'}</div>`}
         <div style="border:1px solid var(--bord);border-radius:10px;padding:8px">${ticket}</div>
-        <div class="inline" style="justify-content:flex-end"><button class="btn" data-fermer>Nouvelle vente</button><button class="btn btn-p" id="imp">Imprimer le ${pr.est_vente ? 'reçu' : 'ticket'}</button></div>`);
+        <div class="inline" style="justify-content:flex-end"><button class="btn" data-fermer>Nouvelle vente</button><button class="btn btn-p" id="imp">Imprimer le ${payant ? 'reçu' : 'ticket'}</button></div>`);
       m.el.querySelector('#imp').onclick = () => imprimer(ticket);
     };
     try {
@@ -455,7 +460,7 @@ export async function render(el, ctx) {
 
 export function ticketHtml(ctx, v) {
   const ph = ctx.pharmacie;
-  const estVente = v.programme.est_vente;
+  const estVente = estPayant(v.programme);
   const lignes = v.lignes.map(({ p, n, prix }) => {
     const pu = prix ?? p.prix_vente;
     return `<div>${esc(p.designation)}</div><div class="ligne"><span>&nbsp;&nbsp;${n} × ${estVente ? fmt(pu) : '0'}</span><span>${estVente ? fmt(n * pu) : '0'}</span></div>`;
@@ -464,6 +469,7 @@ export function ticketHtml(ctx, v) {
   return `<div class="ticket">
     <div class="c" style="font-weight:700;font-size:14px">${esc(ph.nom || 'Pharmacie')}</div>
     ${ph.adresse || ph.telephone ? `<div class="c">${esc([ph.adresse, ph.telephone].filter(Boolean).join(' · '))}</div>` : ''}
+    ${v.programme.recouvrable ? `<div class="c" style="font-weight:700">${esc(v.programme.nom.toUpperCase())} (${esc(v.programme.sigle)})</div><div class="c">Médicaments recouvrables</div>` : ''}
     ${estVente ? '' : `<div class="c" style="font-weight:700">PROGRAMME ${esc(v.programme.nom.toUpperCase())} (${esc(v.programme.sigle)})</div><div class="c">Médicaments GRATUITS · ne pas payer</div>`}
     <div class="sep"></div>
     ${v.provisoire ? '<div class="c" style="font-weight:700">TICKET PROVISOIRE (hors ligne)</div>' : ''}

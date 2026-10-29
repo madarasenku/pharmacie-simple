@@ -11,6 +11,7 @@ lancerTest('RÉGLAGES — comptes et sauvegarde', async (r) => {
 
     await page.click('#nouvel-utilisateur');
     await page.fill('.modal #u-nom', 'Yao Koffi');
+    r.check('nom mis en majuscules à la saisie', await page.$eval('.modal #u-nom', (i) => i.value), 'YAO KOFFI');
     await page.fill('.modal #u-id', 'Yao Koffi');
     r.check('identifiant nettoyé à la saisie', await page.$eval('.modal #u-id', (i) => i.value), 'yao.koffi');
     await page.fill('.modal #u-mdp', 'yao');
@@ -22,7 +23,7 @@ lancerTest('RÉGLAGES — comptes et sauvegarde', async (r) => {
     await page.click('.modal #u-ok');
     await toast(page, 'Compte créé');
     r.check('compte demandé au serveur', etat.appels.find((a) => a[0] === 'fonction')[2],
-      { action: 'creer', nom: 'Yao Koffi', identifiant: 'yao.koffi', mot_de_passe: 'Bassam2026', role: 'responsable' });
+      { action: 'creer', nom: 'YAO KOFFI', identifiant: 'yao.koffi', mot_de_passe: 'Bassam2026', role: 'responsable' });
 
     // Désactivation : confirmation demandée, puis envoyée
     await page.click('[data-actif="33333333-3333-4333-8333-333333333333"]');

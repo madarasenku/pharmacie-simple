@@ -270,7 +270,7 @@ do $$ begin
   assert (select details ->> 'apres' from journal where action = 'prix' order by id desc limit 1) = '125.00', 'changement de prix journalisé';
   perform enregistrer_entree(jsonb_build_object('produit_id', pg_temp.v('amox'), 'programme_id', pg_temp.v('vente'), 'quantite', 1, 'prix_vente', 130));
   assert (select count(*) from journal where action = 'prix') = 2, 'prix changé à l''entrée : une seule ligne de journal de plus';
-  assert (select (valeur ->> 'version')::int from parametres where cle = 'version_base') = 6, 'version de la base';
+  assert (select (valeur ->> 'version')::int from parametres where cle = 'version_base') = 7, 'version de la base';
 end $$;
 select pg_temp.qui('awa');
 do $$ declare n int; begin
@@ -315,7 +315,54 @@ do $$ declare r jsonb; neuf int; vide int; g_neuf int; g_vide int; begin
   assert (select count(*) from journal where action in ('produits_supprimes', 'programmes_supprimes')) = 2, 'suppressions au journal';
 end $$;
 
--- ---------- 11. Mot de passe temporaire ----------
+-- ---------- 11. Programme recouvrable PHPSP : vendu, avec son propre prix et son propre point ----------
+do $$ declare g int := (select id from programmes where code = 'PHPSP'); r jsonb; c jsonb; begin
+  assert (select recouvrable and not est_vente and actif from programmes where id = g), 'PHPSP créé, recouvrable';
+  insert into t values ('phpsp', g);
+  insert into produits_programmes (produit_id, programme_id, prix_vente) values (pg_temp.v('amox'), g, 80);
+  -- entrée PHPSP avec un nouveau prix : il change le prix PHPSP, pas le prix de la Vente
+  perform enregistrer_entree(jsonb_build_object('produit_id', pg_temp.v('amox'), 'programme_id', g, 'quantite', 5, 'numero_lot', 'PH1',
+    'peremption', (current_date + 300)::text, 'prix_achat', 40, 'prix_vente', 90));
+  assert (select prix_vente from produits_programmes where produit_id = pg_temp.v('amox') and programme_id = g) = 90, 'prix PHPSP mis à jour';
+  perform pg_temp.refus(format('update produits_programmes set programme_id = %s where produit_id = %s and programme_id = %s', pg_temp.v('pnlp'), pg_temp.v('amox'), g), 'permission denied');
+  update produits_programmes set prix_vente = 90 where produit_id = pg_temp.v('amox') and programme_id = g;
+  assert (select prix_vente from produits where id = pg_temp.v('amox')) = 130, 'prix de la Vente inchangé';
+  assert (select details ->> 'origine' from journal where action = 'prix' order by id desc limit 1) = 'PHPSP', 'changement de prix PHPSP journalisé';
+  -- vente PHPSP : payante, caisse obligatoire
+  perform pg_temp.refus(format($q$select enregistrer_vente(jsonb_build_object('programme_id', %s, 'mode', 'especes', 'lignes', jsonb_build_array(jsonb_build_object('produit_id', pg_temp.v('amox'), 'quantite', 1))))$q$, g), 'Ouvrez la caisse');
+  perform ouvrir_caisse(0);
+  r := enregistrer_vente(jsonb_build_object('programme_id', g, 'mode', 'especes', 'montant_recu', 200,
+    'lignes', jsonb_build_array(jsonb_build_object('produit_id', pg_temp.v('amox'), 'quantite', 2))));
+  assert (r ->> 'total')::numeric = 180 and r ->> 'numero' like 'PHPSP-%', 'vente PHPSP au prix PHPSP : ' || r::text;
+  assert (select mode_paiement from ventes where id = (r ->> 'id')::bigint) = 'especes', 'payée, pas gratuite';
+  assert (select bool_and(type = 'vente') from mouvements where vente_id = (r ->> 'id')::bigint), 'mouvement de vente';
+  assert (select quantite from lots where numero = 'PH1') = 3, 'stock PHPSP diminué';
+  -- une vente Vente du même produit garde le prix normal
+  r := enregistrer_vente(jsonb_build_object('programme_id', pg_temp.v('vente'), 'mode', 'momo',
+    'lignes', jsonb_build_array(jsonb_build_object('produit_id', pg_temp.v('amox'), 'quantite', 1))));
+  assert (r ->> 'total')::numeric = 130, 'prix normal pour la Vente';
+  c := resume_caisse((select id from caisses where fermee_le is null));
+  assert (c ->> 'especes')::numeric = 180 and (c -> 'recouvrables' -> 0 ->> 'sigle') = 'PHPSP' and (c -> 'recouvrables' -> 0 ->> 'especes')::numeric = 180,
+    'caisse : argent PHPSP montré à part : ' || c::text;
+  perform fermer_caisse(180);
+  -- l'équation du rapport tient aussi pour PHPSP
+  assert (select bool_and(stock_initial + recu - dispense - perimes = stock_disponible) from rapport_mensuel(g, current_date)), 'rapport PHPSP juste';
+end $$;
+
+-- ---------- 12. Noms des agents en majuscules ----------
+do $$ begin
+  assert (select bool_and(nom = upper(nom)) from profiles), 'noms existants en majuscules';
+end $$;
+reset role;
+insert into auth.users (email, raw_user_meta_data, raw_app_meta_data) values ('yao@pharmacie.local', '{"nom":"yao koffi","identifiant":"yao"}', '{"cree_par_gerant":true,"role":"vendeur"}');
+update profiles set nom = 'awa traoré' where identifiant = 'awa';
+set role authenticated;
+do $$ begin
+  assert (select nom from profiles where identifiant = 'yao') = 'YAO KOFFI', 'nouveau compte en majuscules';
+  assert (select nom from profiles where identifiant = 'awa') = upper('awa traoré'), 'nom modifié remis en majuscules';
+end $$;
+
+-- ---------- 13. Mot de passe temporaire ----------
 select pg_temp.qui('awa');
 select mot_de_passe_personnel_defini();
 do $$ begin
@@ -324,7 +371,7 @@ end $$;
 
 reset role;
 
--- ---------- 12. Hygiène de sécurité (comme les conseils Supabase) ----------
+-- ---------- 14. Hygiène de sécurité (comme les conseils Supabase) ----------
 do $$ declare x text; begin
   select string_agg(tablename, ', ') into x from pg_tables where schemaname = 'public' and not rowsecurity;
   assert x is null, 'tables sans RLS : ' || x;

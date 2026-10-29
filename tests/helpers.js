@@ -48,9 +48,10 @@ const ilYA = (minutes) => new Date(Date.now() - minutes * 60000).toISOString();
 
 // ── Jeu de données ───────────────────────────────────────────────────
 const UTILISATEURS = {
-  gerant: { id: '11111111-1111-4111-8111-111111111111', nom: 'Gérante Test', identifiant: 'gerant', role: 'gerant' },
-  responsable: { id: '22222222-2222-4222-8222-222222222222', nom: 'Koné Responsable', identifiant: 'kone', role: 'responsable' },
-  vendeur: { id: '33333333-3333-4333-8333-333333333333', nom: 'Awa Vendeuse', identifiant: 'awa', role: 'vendeur' }
+  // Noms en MAJUSCULES, comme la base les enregistre (déclencheur profiles_nom_majuscule)
+  gerant: { id: '11111111-1111-4111-8111-111111111111', nom: 'GÉRANTE TEST', identifiant: 'gerant', role: 'gerant' },
+  responsable: { id: '22222222-2222-4222-8222-222222222222', nom: 'KONÉ RESPONSABLE', identifiant: 'kone', role: 'responsable' },
+  vendeur: { id: '33333333-3333-4333-8333-333333333333', nom: 'AWA VENDEUSE', identifiant: 'awa', role: 'vendeur' }
 };
 
 function donneesDeBase() {
@@ -58,7 +59,9 @@ function donneesDeBase() {
     { id: 1, code: 'VENTE', nom: 'Vente (produits recouvrables)', sigle: 'VENTE', est_vente: true, frequence: 'mensuel', categories: [], actif: true, ordre: 0 },
     { id: 2, code: 'PNLP', nom: 'Paludisme', sigle: 'PNLP', est_vente: false, frequence: 'mensuel', categories: ['Enfant < 5 ans', 'Femme enceinte', 'Autre'], actif: true, ordre: 10 },
     { id: 3, code: 'GRAT', nom: 'Gratuité ciblée', sigle: 'GRAT', est_vente: false, frequence: 'mensuel', categories: ['Enfant < 5 ans', 'Femme enceinte'], actif: true, ordre: 20 },
-    { id: 4, code: 'PF', nom: 'Planification familiale', sigle: 'PF', est_vente: false, frequence: 'mensuel', categories: [], actif: true, ordre: 30 }
+    { id: 4, code: 'PF', nom: 'Planification familiale', sigle: 'PF', est_vente: false, frequence: 'mensuel', categories: [], actif: true, ordre: 30 },
+    // Programme recouvrable : médicaments vendus, avec leur propre prix et leur propre point
+    { id: 5, code: 'PHPSP', nom: 'PHPSP', sigle: 'PHPSP', est_vente: false, recouvrable: true, frequence: 'mensuel', categories: [], actif: true, ordre: 40 }
   ];
   const produits = [
     { id: 1, designation: 'PARACETAMOL 500 MG CP', code_barres: '6000000000028', presentation: 'Plaquette', prix_achat: 10, prix_vente: 25, stock_min: 20, actif: true },
@@ -71,9 +74,11 @@ function donneesDeBase() {
     { id: 2, produit_id: 2, programme_id: 2, numero: 'A7', peremption: dansJours(200), quantite: 43 },
     { id: 3, produit_id: 2, programme_id: 3, numero: 'G2', peremption: null, quantite: 12 },
     { id: 4, produit_id: 3, programme_id: 1, numero: 'AM9', peremption: dansJours(-5), quantite: 3 },
-    { id: 5, produit_id: 2, programme_id: 1, numero: 'V1', peremption: dansJours(60), quantite: 10 }
+    { id: 5, produit_id: 2, programme_id: 1, numero: 'V1', peremption: dansJours(60), quantite: 10 },
+    { id: 6, produit_id: 1, programme_id: 5, numero: 'PH1', peremption: dansJours(300), quantite: 20 }
   ];
-  const liens = [[1, 1], [2, 1], [2, 2], [2, 3], [3, 1], [4, 1]].map(([produit_id, programme_id]) => ({ produit_id, programme_id }));
+  const liens = [[1, 1], [2, 1], [2, 2], [2, 3], [3, 1], [4, 1], [1, 5]].map(([produit_id, programme_id]) => ({ produit_id, programme_id, prix_vente: null }));
+  liens.find((l) => l.produit_id === 1 && l.programme_id === 5).prix_vente = 15; // prix PHPSP du paracétamol (Vente : 25)
   const profiles = Object.values(UTILISATEURS).map((u, i) => ({
     ...u, email: u.identifiant + '@pharmacie.local', actif: true, doit_changer_mdp: false, created_at: ilYA(10000 - i)
   }));
@@ -84,7 +89,7 @@ function donneesDeBase() {
       { cle: 'droits_responsable', valeur: { vendre: true, entree: true, credit: true, programmes: true, corriger: true, annuler: true, prix: false, rapports: true, base: false } },
       { cle: 'pharmacie', valeur: { nom: 'Pharmacie Test', region: 'SUD COMOÉ', district: 'GRAND-BASSAM', etablissement: 'CSR TEST' } },
       { cle: 'derniere_sauvegarde', valeur: { date: new Date().toISOString(), par: 'Gérante Test' } },
-      { cle: 'version_base', valeur: { version: 6 } }
+      { cle: 'version_base', valeur: { version: 7 } }
     ],
     programmes, produits, lots, produits_programmes: liens,
     clients: [{ id: 1, nom: 'TRAORE Adama', telephone: '0700000001', plafond: 10000 }],
@@ -126,20 +131,23 @@ function vStock(db) {
 function rpcParDefaut(db, etat) {
   return {
     caisse_ouverte: () => db.caisses.find((c) => !c.fermee_le)?.id ?? null,
-    resume_caisse: () => ({ fond: 10000, especes: 50, momo: 0, credit: 0, remboursements: 0 }),
+    resume_caisse: () => ({ fond: 10000, especes: 50, momo: 0, credit: 0, remboursements: 0, recouvrables: [] }),
     enregistrer_vente: (a) => {
       const p = a.p;
       const deja = db.ventes.find((v) => v.ref_client && v.ref_client === p.ref_client);
       if (deja) return { id: deja.id, numero: deja.numero, total: deja.total, deja: true };
       const id = Math.max(0, ...db.ventes.map((v) => v.id)) + 1;
       const prog = db.programmes.find((x) => x.id === p.programme_id);
+      const payant = prog.est_vente || prog.recouvrable;
       const lignes = p.lignes.map((l) => {
         const pr = db.produits.find((x) => x.id === l.produit_id);
-        return { quantite: l.quantite, prix_unitaire: prog.est_vente ? pr.prix_vente : 0, cout_unitaire: pr.prix_achat, produit_id: pr.id, produits: { designation: pr.designation, prix_vente: pr.prix_vente } };
+        const lien = db.produits_programmes.find((x) => x.produit_id === pr.id && x.programme_id === prog.id);
+        const prix = lien?.prix_vente ?? pr.prix_vente;
+        return { quantite: l.quantite, prix_unitaire: payant ? prix : 0, cout_unitaire: pr.prix_achat, produit_id: pr.id, produits: { designation: pr.designation, prix_vente: pr.prix_vente } };
       });
       const total = lignes.reduce((s, l) => s + l.quantite * l.prix_unitaire, 0);
       const numero = (prog.est_vente ? 'V' : prog.sigle) + '-' + AUJ.getFullYear() + '-' + String(id).padStart(5, '0');
-      db.ventes.push({ id, numero, programme_id: p.programme_id, caisse_id: 1, mode_paiement: prog.est_vente ? (p.mode || 'especes') : 'gratuit', total, annulee: false,
+      db.ventes.push({ id, numero, programme_id: p.programme_id, caisse_id: 1, mode_paiement: payant ? (p.mode || 'especes') : 'gratuit', total, annulee: false,
         ref_client: p.ref_client, saisie_hors_ligne: !!p.hors_ligne, created_at: p.hors_ligne ? p.date_locale : new Date().toISOString(), patient_sexe: 'NP', clients: null, ventes_lignes: lignes });
       return { id, numero, total };
     },

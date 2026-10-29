@@ -64,6 +64,13 @@ export const nombre = (v) => {
   return isNaN(n) ? null : n;
 };
 
+// Origines : la Vente et les programmes « recouvrables » (PHPSP…) sont payants ; les autres programmes sont gratuits
+export const estPayant = (g) => !!g && (g.est_vente || !!g.recouvrable);
+export const nomOrigine = (g) => (!g ? '?' : g.est_vente ? 'Vente' : g.sigle);
+export const typeOrigine = (g) => (!g ? '' : g.est_vente ? 'Payant' : g.recouvrable ? 'Recouvrable · payant' : 'Gratuit');
+// Prix d'un produit pour une origine : prix propre à l'origine (ex. PHPSP), sinon son prix de vente
+export const prixDe = (p, origineId) => Number(p?.origines?.[origineId]?.prix ?? p?.prix_vente ?? 0);
+
 // Mots de passe : même règle que labo
 export const MDP_REGLE = 'Au moins 8 caractères, avec au moins une lettre et un chiffre.';
 export const mdpValide = (m) => String(m).length >= 8 && /[A-Za-z]/.test(m) && /\d/.test(m);
@@ -223,7 +230,7 @@ export async function chargerCatalogue(sb, { secours = false } = {}) {
   try {
     [produits, liens, stock, cmm] = await Promise.all([
       tout(() => sb.from('produits').select('*').order('designation').order('id')),
-      tout(() => sb.from('produits_programmes').select('produit_id, programme_id').order('produit_id').order('programme_id')),
+      tout(() => sb.from('produits_programmes').select('produit_id, programme_id, prix_vente').order('produit_id').order('programme_id')),
       tout(() => sb.from('v_stock').select('*').order('produit_id').order('programme_id')),
       tout(() => sb.from('v_cmm').select('*').order('produit_id').order('programme_id'))
     ]);
@@ -236,7 +243,7 @@ export async function chargerCatalogue(sb, { secours = false } = {}) {
   for (const p of produits) parId.set(p.id, { ...p, origines: {} });
   for (const l of liens) {
     const p = parId.get(l.produit_id);
-    if (p) p.origines[l.programme_id] = { quantite: 0, perimee: 0, prochaine: null, cmm: 0, aEuDuStock: false };
+    if (p) p.origines[l.programme_id] = { quantite: 0, perimee: 0, prochaine: null, cmm: 0, aEuDuStock: false, prix: l.prix_vente === null || l.prix_vente === undefined ? null : Number(l.prix_vente) };
   }
   for (const s of stock) {
     const o = parId.get(s.produit_id)?.origines[s.programme_id];

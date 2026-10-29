@@ -72,7 +72,7 @@ export async function render(el, ctx) {
         <div class="inline"><button class="btn" id="export">Exporter Excel</button>${ctx.peut('rapports') ? '<a class="btn" href="#/rapport">Rapport de commande district</a>' : ''}</div></div>
       <div class="origines" role="group" aria-label="Origine affichée">
         <button class="org ${vue === 'tout' ? 'on' : ''}" data-vue="tout"><strong>Tout</strong><span class="small">toutes les origines</span></button>
-        ${origines.map((o) => `<button class="org ${o.id === vue ? (o.est_vente ? 'on' : 'on-v') : ''}" data-vue="${o.id}"><strong>${esc(o.est_vente ? 'Vente' : o.sigle)}</strong><span class="small">${esc(o.est_vente ? 'stock payant' : o.nom)}</span></button>`).join('')}
+        ${origines.map((o) => `<button class="org ${o.id === vue ? (o.est_vente ? 'on' : o.recouvrable ? 'on-r' : 'on-v') : ''}" data-vue="${o.id}"><strong>${esc(o.est_vente ? 'Vente' : o.sigle)}</strong><span class="small">${esc(o.est_vente ? 'stock payant' : o.recouvrable ? o.nom + ' · payant' : o.nom)}</span></button>`).join('')}
       </div>
       ${compte('jamais') && ctx.peut('corriger') ? `<div class="alert alert-prog">${compte('jamais')} produit(s) n’ont encore jamais eu de stock enregistré${vue === 'tout' ? '' : ' en ' + esc(nom(vue))}.
         S’ils sont déjà sur vos étagères, saisissez-les dans <a href="#/inventaire">Inventaire</a> (stock de départ) ; sinon faites une <a href="#/entree">entrée</a> à leur réception.</div>` : ''}

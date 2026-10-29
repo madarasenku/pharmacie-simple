@@ -66,8 +66,8 @@ lancerTest('STOCK — choisir l’origine affichée', async (r) => {
     const { page, erreurs } = app;
     await aller(page, 'stock');
     const boutons = await page.$$eval('[data-vue]', (bs) => bs.map((b) => b.querySelector('strong').textContent));
-    r.check('boutons Tout + chaque origine', boutons, ['Tout', 'Vente', 'PNLP', 'GRAT', 'PF']);
-    r.check('Tout : 4 produits, une colonne par origine', [await page.$$eval('[data-produit]', (t) => t.length), await page.$$eval('thead th', (t) => t.length)], [4, 9]);
+    r.check('boutons Tout + chaque origine', boutons, ['Tout', 'Vente', 'PNLP', 'GRAT', 'PF', 'PHPSP']);
+    r.check('Tout : 4 produits, une colonne par origine', [await page.$$eval('[data-produit]', (t) => t.length), await page.$$eval('thead th', (t) => t.length)], [4, 10]);
 
     await page.click('[data-vue="2"]');
     const lignes = await page.$$eval('[data-produit]', (t) => t.map((x) => x.cells[0].textContent));

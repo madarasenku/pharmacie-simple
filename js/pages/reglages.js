@@ -127,7 +127,7 @@ export async function render(el, ctx) {
     });
     el.querySelector('#nouvel-utilisateur').onclick = () => {
       const m = modal('Nouvel utilisateur', `
-        <div><label class="lbl" for="u-nom">Nom et prénom</label><input class="in" id="u-nom" autocomplete="off"></div>
+        <div><label class="lbl" for="u-nom">Nom et prénom</label><input class="in" id="u-nom" autocomplete="off" style="text-transform:uppercase" placeholder="Ex. : KONE AWA"></div>
         <div><label class="lbl" for="u-id">Identifiant de connexion</label><input class="in" id="u-id" autocapitalize="none" spellcheck="false" autocomplete="off" placeholder="Ex. : awa.kone">
           <div class="small muted" style="margin-top:4px">3 à 30 caractères : lettres sans accent, chiffres, point ou tiret.</div></div>
         <div><label class="lbl" for="u-mdp">Mot de passe provisoire</label><input class="in" id="u-mdp" type="text" autocomplete="off" spellcheck="false">
@@ -136,6 +136,9 @@ export async function render(el, ctx) {
           <option value="vendeur">Vendeur</option><option value="responsable">Responsable</option><option value="gerant">Gérant (administrateur)</option></select></div>
         <button class="btn btn-p" id="u-ok">Créer le compte</button>`);
       const idInput = m.el.querySelector('#u-id');
+      // Les noms des agents s'écrivent en MAJUSCULES (la base le garantit aussi)
+      const nomInput = m.el.querySelector('#u-nom');
+      nomInput.oninput = () => { const pos = nomInput.selectionStart; nomInput.value = nomInput.value.toUpperCase(); nomInput.setSelectionRange(pos, pos); };
       idInput.oninput = () => { idInput.value = idInput.value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '.').replace(/[^a-z0-9._-]/g, ''); };
       m.el.querySelector('#u-ok').onclick = async (e) => {
         if (!m.el.querySelector('#u-nom').value.trim()) return toast('Le nom est obligatoire.', 'warn');
@@ -144,7 +147,7 @@ export async function render(el, ctx) {
         e.target.disabled = true;
         try {
           await appelUtilisateurs(sb, {
-            action: 'creer', nom: m.el.querySelector('#u-nom').value, identifiant: idInput.value,
+            action: 'creer', nom: nomInput.value.trim().toUpperCase(), identifiant: idInput.value,
             mot_de_passe: m.el.querySelector('#u-mdp').value, role: m.el.querySelector('#u-role').value
           });
           m.fermer();

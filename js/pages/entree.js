@@ -1,5 +1,5 @@
 // Entrée de stock : achat pour la vente ou dotation d'un programme.
-import { esc, fmt, fmtF, fmtHeure, fmtPeremption, q, qMaj, rpc, tout, erreur, toast, confirmer, chargerCatalogue, correspond, entier, nombre, isoJour, joursAvant } from '../util.js';
+import { esc, fmt, fmtF, fmtHeure, fmtPeremption, q, qMaj, rpc, tout, erreur, toast, confirmer, chargerCatalogue, correspond, entier, nombre, isoJour, joursAvant, estPayant, prixDe } from '../util.js';
 
 export async function render(el, ctx) {
   const { sb } = ctx;
@@ -66,7 +66,7 @@ export async function render(el, ctx) {
           <div class="card card-pad stack">
             <h2>2. Origine, quantité, lot et prix</h2>
             <div><label class="lbl" for="origine">D'où vient cette livraison ?</label>
-              <select class="in" id="origine">${origines.map((o) => `<option value="${o.id}">${esc(o.est_vente ? 'Achat pour la vente' : 'Dotation ' + o.nom + ' (' + o.sigle + ')')}${choisi.origines[o.id] ? '' : ' — nouveau pour ce produit'}</option>`).join('')}</select></div>
+              <select class="in" id="origine">${origines.map((o) => `<option value="${o.id}">${esc(o.est_vente ? 'Achat pour la vente' : (o.recouvrable ? 'Livraison ' : 'Dotation ') + o.nom + ' (' + o.sigle + (o.recouvrable ? ', recouvrable' : '') + ')')}${choisi.origines[o.id] ? '' : ' — nouveau pour ce produit'}</option>`).join('')}</select></div>
             <div id="zone-commande"></div>
             <div class="grid-3">
               <div><label class="lbl" for="qte">Quantité reçue</label><input class="in num" id="qte" inputmode="numeric"></div>
@@ -75,7 +75,7 @@ export async function render(el, ctx) {
             </div>
             <div class="grid-3" id="zone-prix">
               <div><label class="lbl" for="pa">Prix d'achat unitaire (F)</label><input class="in num" id="pa" inputmode="decimal" value="${choisi.prix_achat || ''}"></div>
-              <div><label class="lbl" for="pv">Prix de vente unitaire (F)</label><input class="in num" id="pv" inputmode="decimal" value="${choisi.prix_vente || ''}" ${ctx.peut('prix') ? '' : 'disabled title="Seul le gérant change les prix"'}></div>
+              <div><label class="lbl" for="pv" id="pv-lbl">Prix de vente unitaire (F)</label><input class="in num" id="pv" inputmode="decimal" value="${choisi.prix_vente || ''}" ${ctx.peut('prix') ? '' : 'disabled title="Seul le gérant change les prix"'}></div>
               <div style="min-height:48px;display:flex;flex-direction:column;justify-content:flex-end"><span class="small muted">Marge par unité</span><span class="num" id="marge" style="font-size:18px;font-weight:600"></span></div>
             </div>
             <div class="grid-2">
@@ -204,10 +204,22 @@ export async function render(el, ctx) {
 
     const og = el.querySelector('#origine');
     if (og) {
+      const marge = () => {
+        const pa = nombre(el.querySelector('#pa').value) || 0;
+        const pv = nombre(el.querySelector('#pv').value) || 0;
+        const m = pv - pa;
+        const z = el.querySelector('#marge');
+        z.textContent = fmtF(m) + (pa ? ' (' + Math.round((m / pa) * 100) + ' %)' : '');
+        z.style.color = m < 0 ? 'var(--rouge)' : '#1A6438';
+      };
       const majPrix = () => {
-        const estVente = ctx.programmes.find((p) => p.id === Number(og.value))?.est_vente;
-        el.querySelector('#zone-prix').classList.toggle('hidden', !estVente);
-        el.querySelector('#four').value = estVente ? 'Pharmacie du district' : 'Dotation ' + (ctx.programmes.find((p) => p.id === Number(og.value))?.sigle || '');
+        const g = ctx.programmes.find((p) => p.id === Number(og.value));
+        // Prix affichés pour une origine payante : la Vente, ou un programme recouvrable (prix propre, ex. PHPSP)
+        el.querySelector('#zone-prix').classList.toggle('hidden', !estPayant(g));
+        el.querySelector('#pv-lbl').textContent = g?.recouvrable ? `Prix de vente ${g.sigle} (F)` : 'Prix de vente unitaire (F)';
+        el.querySelector('#pv').value = estPayant(g) ? (prixDe(choisi, g.id) || '') : '';
+        el.querySelector('#four').value = g?.est_vente ? 'Pharmacie du district' : 'Dotation ' + (g?.sigle || '');
+        marge();
         majCommande();
       };
       // Livraison d'une commande au district : le reçu s'impute sur ce qui reste à recevoir
@@ -223,18 +235,9 @@ export async function render(el, ctx) {
           ${liste.map(({ c, l }) => `<option value="${c.id}" ${c.id === defaut ? 'selected' : ''}>${esc(c.numero)} — ${l ? `commandé ${l.quantite}, déjà reçu ${l.recu}, reste ${Math.max(0, l.quantite - l.recu)}` : 'ce produit n’y figure pas'}</option>`).join('')}</select>`;
       };
       og.onchange = majPrix;
-      majPrix();
-      const marge = () => {
-        const pa = nombre(el.querySelector('#pa').value) || 0;
-        const pv = nombre(el.querySelector('#pv').value) || 0;
-        const m = pv - pa;
-        const z = el.querySelector('#marge');
-        z.textContent = fmtF(m) + (pa ? ' (' + Math.round((m / pa) * 100) + ' %)' : '');
-        z.style.color = m < 0 ? 'var(--rouge)' : '#1A6438';
-      };
       el.querySelector('#pa').oninput = marge;
       el.querySelector('#pv').oninput = marge;
-      marge();
+      majPrix();
       el.querySelector('#ajouter').onclick = ajouterAuStock;
     }
   }
@@ -242,7 +245,7 @@ export async function render(el, ctx) {
   async function ajouterAuStock() {
     const bouton = el.querySelector('#ajouter');
     const origine = Number(el.querySelector('#origine').value);
-    const estVente = ctx.programmes.find((p) => p.id === origine)?.est_vente;
+    const estVente = estPayant(ctx.programmes.find((p) => p.id === origine));
     const qte = entier(el.querySelector('#qte').value);
     if (!qte || qte <= 0) return toast('Indiquez la quantité reçue.', 'warn');
     const per = el.querySelector('#per').value;
