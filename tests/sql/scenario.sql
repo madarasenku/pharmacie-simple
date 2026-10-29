@@ -270,7 +270,7 @@ do $$ begin
   assert (select details ->> 'apres' from journal where action = 'prix' order by id desc limit 1) = '125.00', 'changement de prix journalisé';
   perform enregistrer_entree(jsonb_build_object('produit_id', pg_temp.v('amox'), 'programme_id', pg_temp.v('vente'), 'quantite', 1, 'prix_vente', 130));
   assert (select count(*) from journal where action = 'prix') = 2, 'prix changé à l''entrée : une seule ligne de journal de plus';
-  assert (select (valeur ->> 'version')::int from parametres where cle = 'version_base') = 7, 'version de la base';
+  assert (select (valeur ->> 'version')::int from parametres where cle = 'version_base') = 8, 'version de la base';
 end $$;
 select pg_temp.qui('awa');
 do $$ declare n int; begin
@@ -362,7 +362,45 @@ do $$ begin
   assert (select nom from profiles where identifiant = 'awa') = upper('awa traoré'), 'nom modifié remis en majuscules';
 end $$;
 
--- ---------- 13. Mot de passe temporaire ----------
+-- ---------- 13. Journal des erreurs et anomalies (gérant) ----------
+select pg_temp.qui('awa');
+do $$ begin
+  perform signaler_erreur('{"page":"comptoir","message":"Stock insuffisant pour X","version":"1.5.0","details":{"code":"P0001"}}');
+  assert (select count(*) from erreurs) = 0, 'un vendeur ne lit pas le journal des erreurs';
+  perform pg_temp.refus('select * from anomalies()', 'non autorisée');
+  perform pg_temp.refus('select marquer_erreurs_vues(null)', 'non autorisée');
+end $$;
+select pg_temp.qui('gerant');
+do $$ declare sp int; v jsonb; begin
+  -- erreur signalée par Awa, visible par le gérant, avec qui / quand / page
+  assert (select count(*) from erreurs where page = 'comptoir' and message like 'Stock insuffisant%'
+          and user_id = (select val::uuid from t where cle = 'u_awa') and not vu) = 1, 'erreur signalée et lisible par le gérant';
+  assert marquer_erreurs_vues(null) = 1, 'une erreur marquée vue';
+  assert (select bool_and(vu) from erreurs), 'toutes les erreurs sont vues';
+  -- produit à vendre sans prix : l'anomalie donne son NOM
+  insert into produits (designation, prix_vente) values ('ZZ SANS PRIX', 0) returning id into sp;
+  insert into produits_programmes (produit_id, programme_id) values (sp, pg_temp.v('vente'));
+  assert exists (select 1 from anomalies() where code = 'prix_manquant' and detail = 'ZZ SANS PRIX — Vente' and page = 'base'), 'produit sans prix nommé';
+  -- vendu à 0 F
+  perform ouvrir_caisse(0);
+  perform enregistrer_entree(jsonb_build_object('produit_id', sp, 'programme_id', pg_temp.v('vente'), 'quantite', 2));
+  v := enregistrer_vente(jsonb_build_object('programme_id', pg_temp.v('vente'), 'mode', 'especes',
+    'lignes', jsonb_build_array(jsonb_build_object('produit_id', sp, 'quantite', 1))));
+  assert exists (select 1 from anomalies() where code = 'vente_zero' and detail like 'ZZ SANS PRIX — vente ' || (v ->> 'numero') || '%'), 'vente à 0 F signalée avec le produit et le numéro';
+  perform fermer_caisse(0);
+end $$;
+reset role;
+insert into lots (produit_id, programme_id, numero, peremption, quantite) values (pg_temp.v('amox'), pg_temp.v('vente'), 'PERIME-X', current_date - 3, 2);
+update caisses set ecart = -500 where id = (select max(id) from caisses);
+set role authenticated;
+do $$ begin
+  assert exists (select 1 from anomalies() where code = 'perime_en_stock' and detail like 'ZZ TEST AMOXICILLINE — 2 unité(s), lot PERIME-X%'), 'lot périmé en stock signalé';
+  assert exists (select 1 from anomalies() where code = 'ecart_caisse' and detail like '%il manquait 500 F%'), 'écart de caisse signalé';
+  assert exists (select 1 from anomalies() where code = 'sauvegarde'), 'sauvegarde à faire signalée';
+  assert not exists (select 1 from anomalies() where code = 'prix_manquant' and detail like 'ZZ TEST ACT ENFANT%'), 'produit gratuit sans prix : pas une anomalie';
+end $$;
+
+-- ---------- 14. Mot de passe temporaire ----------
 select pg_temp.qui('awa');
 select mot_de_passe_personnel_defini();
 do $$ begin
@@ -371,7 +409,7 @@ end $$;
 
 reset role;
 
--- ---------- 14. Hygiène de sécurité (comme les conseils Supabase) ----------
+-- ---------- 15. Hygiène de sécurité (comme les conseils Supabase) ----------
 do $$ declare x text; begin
   select string_agg(tablename, ', ') into x from pg_tables where schemaname = 'public' and not rowsecurity;
   assert x is null, 'tables sans RLS : ' || x;

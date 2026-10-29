@@ -1,7 +1,7 @@
 # Pharmacie Simple — dossier de passation (contexte pour une IA ou un développeur)
 
 > À lire EN ENTIER avant de modifier le code. Il complète le README (qui s'adresse à l'utilisatrice).
-> Version applicative : **1.4.0** · cache du service worker : **pharmacie-simple-v5** · base attendue : **7**
+> Version applicative : **1.5.0** · cache du service worker : **pharmacie-simple-v6** · base attendue : **8**
 
 ## 1. Vue d'ensemble
 
@@ -73,6 +73,14 @@
 - `rapports_corrections` : quantités commandées corrigées à la main (partagées entre postes).
 - Vues `v_stock` (quantité utilisable, périmée, prochaine péremption, `nb_lots`) et `v_cmm` (conso moyenne 3 mois).
 - `parametres` : `pharmacie`, `droits_responsable`, `droits_vendeur`, `derniere_sauvegarde`, `version_base`.
+- `erreurs` (lecture gérant seul) : erreurs affichées aux agents, envoyées par `signaler_erreur(p jsonb)` (au plus 60 par
+  personne et par heure, gardées 6 mois), marquées vues par `marquer_erreurs_vues(ids)` (`null` = toutes). Côté site,
+  `erreur()` appelle `rapporter()` (util.js) ; le rapporteur posé par `app.js` ignore les coupures réseau et n'envoie
+  la même erreur (page + message) qu'une fois par minute.
+- `anomalies()` (gérant) : contrôle calculé à la demande, jamais stocké — `code`, `gravite` (haute / moyenne / info),
+  `titre`, `detail` qui **commence par le nom du produit** (« SALBUTAMOL AMP INJ — Vente »), `page` où corriger, `cle`.
+  Page « Erreurs » (`js/pages/erreurs.js`) ; pastille rouge sur l'onglet = anomalies non « info » + erreurs non vues.
+  Le bouton « Corriger » d'un produit ouvre `#/base?rech=<nom>` (la Base lit `rech` dans l'adresse).
 
 ### Rapport mensuel (`rapport_mensuel`)
 A (stock initial) + B (entrées + corrections positives) − C (ventes/distributions − annulations) − D (périmés +
@@ -123,3 +131,5 @@ modules (le test de déploiement le vérifie). Pas de rechargement automatique :
   jamais `new Date('AAAA-MM-JJ')` comparé à `new Date()` (décalage de fuseau).
 - `confirmer()` renvoie `false` si la fenêtre est fermée par la croix, Échap ou un clic à côté.
 - Côte d'Ivoire = UTC+0 toute l'année : les bornes de jour du site et du serveur coïncident.
+- Nouveau contrôle de données : l'ajouter dans `anomalies()` (nouvelle migration, `create or replace`) avec un `detail`
+  qui nomme le produit ; le site l'affiche sans changement (lien « Corriger » selon `page`).

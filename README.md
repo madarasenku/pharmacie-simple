@@ -27,6 +27,7 @@ Adresse du site : https://madarasenku.github.io/pharmacie-simple/
 | Rapport district | Formulaire « commandes recouvrables » rempli automatiquement (2 × CMM − SD), quantités corrigeables (corrections partagées entre tous les postes), **enregistrement de la commande envoyée** et suivi de sa livraison. |
 | Base | Programmes et produits : prix, minimum, code-barres, rattachement à un ou plusieurs programmes. Suppression d'un ou plusieurs éléments cochés : effacés s'ils n'ont jamais servi, masqués (inactifs) s'ils ont un historique, refusés s'il reste du stock. |
 | Réglages | Infos de la pharmacie, droits par rôle, utilisateurs, journal des actions sensibles, sauvegarde complète. |
+| Erreurs (gérant) | Journal des erreurs : ce qui est incohérent dans les données (produit à vendre sans prix, vente à 0 F, lot périmé encore en stock, écart de caisse, crédit au-delà du plafond, sauvegarde ancienne…) **avec le nom du produit** et un bouton « Corriger » qui ouvre la bonne page, puis les erreurs apparues à l'écran des agents (message, page, qui, quand), à marquer « vues ». Une pastille rouge sur l'onglet compte ce qui reste à faire. |
 
 ## Programmes recouvrables (PHPSP)
 
@@ -65,6 +66,7 @@ Les fichiers SQL sont dans `supabase/migrations/`, à appliquer dans l'ordre :
 | `005_inventaire_commandes_hors_ligne.sql` | Inventaire, commandes au district, ventes hors ligne sans doublon, verrou après fermeture de caisse, mot de passe provisoire, journal des prix, index de performance. |
 | `006_suppression_produits_programmes.sql` | Suppression de produits et de programmes (un ou plusieurs) sans jamais effacer d'historique. |
 | `007_programmes_recouvrables_phpsp.sql` | Programmes « recouvrables » (PHPSP) : vendus, avec un prix propre par origine et leur argent montré à part dans la caisse ; noms des agents en majuscules. |
+| `008_journal_erreurs_anomalies.sql` | Journal des erreurs (`erreurs`, `signaler_erreur`, `marquer_erreurs_vues`) et contrôle des anomalies (`anomalies()`), réservés au gérant. |
 
 Sur la base de production, la 005 a été appliquée en deux temps (le 28/10/2026) : la première moitié depuis l'éditeur
 SQL, puis la fin avec `supabase/production/005_suite.sql` (même contenu, relançable sans risque). Pour une base neuve,
@@ -74,7 +76,7 @@ Le site connaît la version de base qu'il attend (`VERSION_BASE` dans `js/versio
 le gérant voit un bandeau rouge.
 
 Les prix de départ viennent des fiches papier : vérifiez-les et complétez-les dans l'onglet **Base** (les prix manquants
-sont surlignés en jaune).
+sont surlignés en jaune, et les produits à vendre sans prix sont nommés en haut de la liste et dans l'onglet **Erreurs**).
 
 ## Mise en ligne
 

@@ -102,6 +102,11 @@ nav.menu a:hover { color: var(--vert-fonce); background: #F3F8F5; }
 nav.menu a.on { color: var(--vert); border-bottom-color: var(--vert); background: #F0F7F3; }
 nav.menu a:focus-visible { outline: 3px solid #8FD3B8; outline-offset: -3px; }
 nav.menu .version { margin-left: auto; align-self: center; flex: none; padding: 0 6px 0 12px; font-size: 12px; color: var(--gris); }
+nav.menu a { position: relative; }
+nav.menu .pastille {
+  position: absolute; top: 6px; left: 22px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+  background: var(--rouge); color: #FFFFFF; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
+}
 nav.menu .court { display: none; }
 /* Écran moyen : on garde toute la place pour les onglets (noms courts sous 1320 px) */
 @media (max-width: 1400px) { nav.menu .version { display: none; } }
@@ -232,6 +237,12 @@ table.tbl { width: 100%; border-collapse: collapse; }
 details.patient { border: 1px solid var(--bord); border-radius: 10px; padding: 0 14px; }
 details.patient summary { min-height: 48px; display: flex; align-items: center; cursor: pointer; font-weight: 600; }
 
+/* ---------- Journal des erreurs ---------- */
+.anomalie { padding: 14px 18px; border-bottom: 1px solid #EDF1EF; }
+.anomalie ul { list-style: none; margin: 8px 0 0; padding: 0; }
+.anomalie li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 6px 0; border-top: 1px dashed #E3EAE6; }
+.anomalie li span { min-width: 0; }
+
 /* ---------- Fenêtres ---------- */
 .overlay {
   position: fixed; inset: 0; background: rgba(15, 30, 25, .45);
@@ -296,6 +307,7 @@ details.patient summary { min-height: 48px; display: flex; align-items: center; 
   /* Sur téléphone : une seule rangée qui défile, l'icône au-dessus du nom */
   nav.menu { padding: 0 4px; }
   nav.menu a { flex-direction: column; justify-content: center; gap: 3px; min-height: 60px; padding: 4px 9px 2px; font-size: 11.5px; }
+  nav.menu .pastille { top: 4px; left: calc(50% + 6px); }
   nav.menu a svg { width: 22px; height: 22px; }
   nav.menu .sep { margin: 14px 2px; }
   nav.menu .version { display: none; }

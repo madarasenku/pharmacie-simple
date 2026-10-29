@@ -89,7 +89,7 @@ function donneesDeBase() {
       { cle: 'droits_responsable', valeur: { vendre: true, entree: true, credit: true, programmes: true, corriger: true, annuler: true, prix: false, rapports: true, base: false } },
       { cle: 'pharmacie', valeur: { nom: 'Pharmacie Test', region: 'SUD COMOÉ', district: 'GRAND-BASSAM', etablissement: 'CSR TEST' } },
       { cle: 'derniere_sauvegarde', valeur: { date: new Date().toISOString(), par: 'Gérante Test' } },
-      { cle: 'version_base', valeur: { version: 7 } }
+      { cle: 'version_base', valeur: { version: 8 } }
     ],
     programmes, produits, lots, produits_programmes: liens,
     clients: [{ id: 1, nom: 'TRAORE Adama', telephone: '0700000001', plafond: 10000 }],
@@ -105,6 +105,8 @@ function donneesDeBase() {
     v_dettes: [{ client_id: 1, nom: 'TRAORE Adama', telephone: '0700000001', plafond: 10000, du: 3700, premier_credit: ilYA(60 * 24 * 40) }],
     credits_paiements: [],
     ventes_lignes: [], commandes: [], commandes_lignes: [], rapports_corrections: [],
+    // Journal des erreurs (lecture gérant ; « profiles » = la jointure profiles!erreurs_user_id_fkey(nom))
+    erreurs: [],
     journal: [{ id: 1, user_id: UTILISATEURS.gerant.id, action: 'correction', details: { lot: 1, motif: 'Casse' }, created_at: ilYA(30), profiles: { nom: 'Gérante Test' } }]
   };
 }
@@ -208,6 +210,33 @@ function rpcParDefaut(db, etat) {
         }
       }
       return r;
+    },
+    // Comme anomalies() côté serveur, pour les deux contrôles que la fausse base sait calculer
+    anomalies: () => {
+      if (etat.utilisateur?.role !== 'gerant') throw new Error('Action non autorisée (gérant).');
+      const auj = isoJour(new Date());
+      const prog = (id) => db.programmes.find((g) => g.id === id);
+      const nomOrigine = (g) => (g.est_vente ? 'Vente' : g.sigle);
+      const prix = db.produits_programmes.filter((l) => {
+        const p = db.produits.find((x) => x.id === l.produit_id), g = prog(l.programme_id);
+        return p?.actif && g?.actif && (g.est_vente || g.recouvrable) && !Number(l.prix_vente ?? p.prix_vente);
+      }).map((l) => ({ code: 'prix_manquant', gravite: 'haute', titre: 'Produit à vendre sans prix de vente',
+        detail: db.produits.find((x) => x.id === l.produit_id).designation + ' — ' + nomOrigine(prog(l.programme_id)), page: 'base', cle: 'prix:' + l.produit_id + ':' + l.programme_id }));
+      const perimes = db.lots.filter((l) => l.quantite > 0 && l.peremption && l.peremption < auj).map((l) => ({
+        code: 'perime_en_stock', gravite: 'haute', titre: 'Lot périmé encore en stock',
+        detail: db.produits.find((x) => x.id === l.produit_id).designation + ' — ' + l.quantite + ' unité(s), lot ' + l.numero, page: 'inventaire', cle: 'perime:' + l.id }));
+      return [...prix, ...perimes];
+    },
+    signaler_erreur: (a) => {
+      const u = etat.utilisateur;
+      db.erreurs.push({ id: db.erreurs.length + 1, created_at: new Date().toISOString(), user_id: u?.id, profiles: u ? { nom: u.nom } : null,
+        page: a.p.page, message: a.p.message, details: a.p.details || {}, version: a.p.version, appareil: a.p.appareil, vu: false });
+      return null;
+    },
+    marquer_erreurs_vues: (a) => {
+      const cibles = db.erreurs.filter((x) => !x.vu && (!a.p_ids || !a.p_ids.length || a.p_ids.includes(x.id)));
+      cibles.forEach((x) => { x.vu = true; x.vu_par = etat.utilisateur.id; });
+      return cibles.length;
     },
     valider_inventaire: (a) => ({ corrections: a.p.comptes.filter((c) => c.reel !== c.attendu).length, lots_ajoutes: a.p.nouveaux.filter((n) => n.quantite > 0).length })
   };

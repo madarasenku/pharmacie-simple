@@ -3,7 +3,7 @@ import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 import { APP_VERSION, VERSION_BASE } from './version.js';
 import {
   esc, q, rpc, erreur, toast, messageErreur, modal, local, estErreurReseau,
-  ROLES, DOMAINE_IDENTIFIANTS, MDP_REGLE, mdpValide, isoJour, debutJour
+  ROLES, DOMAINE_IDENTIFIANTS, MDP_REGLE, mdpValide, isoJour, debutJour, definirRapporteur, rapporter
 } from './util.js';
 import { lireFile, surChangement, synchroniser } from './hors-ligne.js';
 
@@ -18,6 +18,7 @@ import * as point from './pages/point.js';
 import * as rapport from './pages/rapport.js';
 import * as base from './pages/base.js';
 import * as reglages from './pages/reglages.js';
+import * as erreurs from './pages/erreurs.js';
 
 const app = document.getElementById('app');
 
@@ -40,7 +41,8 @@ const PAGES = [
   { id: 'point', titre: 'Point général', court: 'Point', module: point, droit: ['rapports'], groupe: 'suivi', icone: 'point' },
   { id: 'rapport', titre: 'Rapport district', court: 'District', module: rapport, droit: ['rapports'], groupe: 'suivi', icone: 'rapport' },
   { id: 'base', titre: 'Base', module: base, droit: ['base'], groupe: 'gestion', icone: 'base' },
-  { id: 'reglages', titre: 'Réglages', module: reglages, droit: 'gerant', groupe: 'gestion', icone: 'reglages' }
+  { id: 'reglages', titre: 'Réglages', module: reglages, droit: 'gerant', groupe: 'gestion', icone: 'reglages' },
+  { id: 'erreurs', titre: 'Journal des erreurs', court: 'Erreurs', module: erreurs, droit: 'gerant', groupe: 'gestion', icone: 'alerte' }
 ];
 
 // Icônes des onglets (traits simples, couleur du texte)
@@ -55,7 +57,8 @@ const ICONES = {
   point: '<path d="M3.5 20.5h17M6.5 17v-5M11 17V7M15.5 17v-7.5M20 17V4.5"/>',
   rapport: '<path d="M6 3h8.5L19 7.5V21H6z"/><path d="M14 3v5h5M9 12.5h7M9 16.5h7"/>',
   base: '<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
-  reglages: '<path d="M4 6.5h9M17 6.5h3M4 12h3M11 12h9M4 17.5h11M19 17.5h1"/><circle cx="15" cy="6.5" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17.5" r="2"/>'
+  reglages: '<path d="M4 6.5h9M17 6.5h3M4 12h3M11 12h9M4 17.5h11M19 17.5h1"/><circle cx="15" cy="6.5" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17.5" r="2"/>',
+  alerte: '<path d="M12 3.5 21.5 20h-19L12 3.5Z"/><path d="M12 10v4.5M12 17.3v.2"/>'
 };
 const icone = (nom) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONES[nom] || ''}</svg>`;
 
@@ -287,7 +290,7 @@ const menuHtml = () => {
     if (!groupes.length || groupes[groupes.length - 1].nom !== p.groupe) groupes.push({ nom: p.groupe, pages: [] });
     groupes[groupes.length - 1].pages.push(p);
   }
-  return groupes.map((g) => `<div class="groupe">${g.pages.map((p) => `<a href="#/${p.id}" data-page="${p.id}" title="${esc(p.titre)}">${icone(p.icone)}${p.court ? `<span class="long">${esc(p.titre)}</span><span class="court">${esc(p.court)}</span>` : `<span>${esc(p.titre)}</span>`}</a>`).join('')}</div>`)
+  return groupes.map((g) => `<div class="groupe">${g.pages.map((p) => `<a href="#/${p.id}" data-page="${p.id}" title="${esc(p.titre)}">${icone(p.icone)}${p.id === 'erreurs' ? '<span class="pastille hidden" aria-label="à corriger"></span>' : ''}${p.court ? `<span class="long">${esc(p.titre)}</span><span class="court">${esc(p.court)}</span>` : `<span>${esc(p.titre)}</span>`}</a>`).join('')}</div>`)
     .join('<span class="sep" aria-hidden="true"></span>')
     + `<span class="version">v${esc(APP_VERSION)}</span>`;
 };
@@ -429,7 +432,47 @@ async function lancer() {
   dessinerCadre();
   afficherPage();
   lancerSynchro();
+  majPastille();
 }
+
+// ---------- Journal des erreurs (gérant) ----------
+
+// Chaque erreur affichée à un agent est envoyée au journal du gérant (une même erreur au plus une fois par minute)
+const dejaSignalees = new Map();
+definirRapporteur((e, details = {}) => {
+  if (!ctx.profil || ctx.horsLigne || !navigator.onLine) return;
+  const message = messageErreur(e);
+  const page = pageCourante?.id || '';
+  const cle = page + '|' + message;
+  if (Date.now() - (dejaSignalees.get(cle) || 0) < 60000) return;
+  dejaSignalees.set(cle, Date.now());
+  const brut = e?.message && e.message !== message ? e.message : undefined;
+  const pile = e instanceof Error && !(e.code) ? String(e.stack || '').split('\n').slice(0, 4).join('\n') : undefined;
+  sb.rpc('signaler_erreur', { p: {
+    page, message, version: APP_VERSION, appareil: navigator.userAgent.slice(0, 120),
+    details: { ...details, ...(e?.code ? { code: e.code } : {}), ...(brut ? { original: brut.slice(0, 300) } : {}), ...(pile ? { pile } : {}) }
+  } }).then(() => { if (ctx.peut('gerant')) majPastille(); }, () => {});
+});
+
+// Pastille sur l'onglet « Erreurs » : anomalies graves ou à vérifier + erreurs pas encore vues
+async function majPastille(anomalies, nbNonVues) {
+  if (!ctx.peut('gerant') || ctx.horsLigne) return;
+  try {
+    if (anomalies === undefined) {
+      [anomalies, nbNonVues] = await Promise.all([
+        rpc(sb, 'anomalies', {}),
+        q(sb.from('erreurs').select('id').eq('vu', false).limit(100)).then((l) => l.length)
+      ]);
+    }
+    const n = anomalies.filter((a) => a.gravite !== 'info').length + nbNonVues;
+    const pastille = document.querySelector('nav.menu a[data-page="erreurs"] .pastille');
+    if (pastille) {
+      pastille.textContent = n > 99 ? '99+' : String(n);
+      pastille.classList.toggle('hidden', !n);
+    }
+  } catch (_) { /* base pas encore à jour, ou réseau : la pastille attendra */ }
+}
+ctx.majPastille = majPastille;
 
 // Déconnexion forcée : le message reste affiché (l'événement SIGNED_OUT redessine l'écran de connexion)
 async function deconnecterAvecMessage(message) {
@@ -452,6 +495,7 @@ async function verifierCompte() {
       ctx.memoriser();
       document.querySelector('nav.menu').innerHTML = menuHtml();
       marquerOnglet(pageCourante?.id);
+      majPastille();
       toast('Votre rôle a été changé par le gérant : ' + (ROLES[p.role] || p.role) + '.', 'warn');
     }
   } catch (_) { /* réseau : on réessaiera */ }
@@ -460,6 +504,7 @@ async function verifierCompte() {
 window.addEventListener('hashchange', () => { if (demarre) afficherPage(); });
 // Filet de sécurité : une erreur imprévue (bouton, rechargement d'écran) s'affiche au lieu de passer inaperçue
 window.addEventListener('unhandledrejection', (e) => { erreur(e.reason); });
+window.addEventListener('error', (e) => { if (e.error) rapporter(e.error, { fichier: String(e.filename || '').split('/').pop(), ligne: e.lineno }); });
 window.addEventListener('offline', () => majBandeaux());
 // Retour du réseau alors que l'application a démarré hors ligne : on repasse en ligne SANS redessiner
 // la page en cours (un panier en train d'être saisi au comptoir n'est pas perdu)
