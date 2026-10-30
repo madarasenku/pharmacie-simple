@@ -89,7 +89,7 @@ function donneesDeBase() {
       { cle: 'droits_responsable', valeur: { vendre: true, entree: true, credit: true, programmes: true, corriger: true, annuler: true, prix: false, rapports: true, base: false } },
       { cle: 'pharmacie', valeur: { nom: 'Pharmacie Test', region: 'SUD COMOÉ', district: 'GRAND-BASSAM', etablissement: 'CSR TEST' } },
       { cle: 'derniere_sauvegarde', valeur: { date: new Date().toISOString(), par: 'Gérante Test' } },
-      { cle: 'version_base', valeur: { version: 10 } }
+      { cle: 'version_base', valeur: { version: 11 } }
     ],
     programmes, produits, lots, produits_programmes: liens,
     clients: [{ id: 1, nom: 'TRAORE Adama', telephone: '0700000001', plafond: 10000 }],

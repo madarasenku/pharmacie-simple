@@ -1,7 +1,7 @@
 # Pharmacie Simple — dossier de passation (contexte pour une IA ou un développeur)
 
 > À lire EN ENTIER avant de modifier le code. Il complète le README (qui s'adresse à l'utilisatrice).
-> Version applicative : **1.7.0** · cache du service worker : **pharmacie-simple-v8** · base attendue : **10**
+> Version applicative : **1.8.0** · cache du service worker : **pharmacie-simple-v9** · base attendue : **11**
 
 ## 1. Vue d'ensemble
 
@@ -138,5 +138,11 @@ modules (le test de déploiement le vérifie). Pas de rechargement automatique :
   jamais `new Date('AAAA-MM-JJ')` comparé à `new Date()` (décalage de fuseau).
 - `confirmer()` renvoie `false` si la fenêtre est fermée par la croix, Échap ou un clic à côté.
 - Côte d'Ivoire = UTC+0 toute l'année : les bornes de jour du site et du serveur coïncident.
+- Mon stock : `etatProduit()` renvoie un état affiché (le plus grave : un lot périmé en rayon passe avant la rupture) et
+  `drap`, l'ensemble de TOUS les signaux ; les filtres et compteurs utilisent `drap`, jamais l'état affiché seul.
+- Typographie : les chiffres utilisent la police de l'application avec `tabular-nums` (classe `.num`) ; la police à chasse
+  fixe (`--mono`) ne sert plus qu'au ticket de caisse. Onglets : noms courts sous 1700 px (portables 1366/1440 px).
+- Un message rouge placé directement dans `#contenu` (`#contenu > .alert-err`) signifie « la page n'a pas pu s'afficher »
+  (test pages.test.js) : une alerte métier rouge doit être enveloppée (voir `.signal-perimes` dans rapport.js).
 - Nouveau contrôle de données : l'ajouter dans `anomalies()` (nouvelle migration, `create or replace`) avec un `detail`
   qui nomme le produit ; le site l'affiche sans changement (lien « Corriger » selon `page`).
