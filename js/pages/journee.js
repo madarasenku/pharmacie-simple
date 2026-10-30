@@ -77,7 +77,7 @@ export async function render(el, ctx) {
     const benef = vv.reduce((s, v) => s + v.ventes_lignes.reduce((t, l) => t + l.quantite * (l.prix_unitaire - l.cout_unitaire), 0), 0);
     const credit = vv.filter((v) => v.mode_paiement === 'credit').reduce((s, v) => s + Number(v.total), 0);
     const distrib = valides.filter((v) => v.mode_paiement === 'gratuit').length;
-    const nomOrigine = (id) => { const p = ctx.programmes.find((x) => x.id === id); return p ? (p.est_vente ? 'Vente' : p.sigle) : '?'; };
+    const nomOrigine = (id) => { const p = ctx.programmes.find((x) => x.id === id); return p ? (p.sigle) : '?'; };
 
     el.innerHTML = `
       <div class="page-head"><div><h1>Ma journée</h1><div class="small muted">Ventes, distributions et caisse.</div></div>
@@ -85,7 +85,7 @@ export async function render(el, ctx) {
       ${sectionFile()}
       <section class="grid-kpi">
         <div class="card kpi"><div class="t">Ventes</div><div class="v">${vv.length}</div><div class="s">${ventes.length - valides.length} annulée(s)</div></div>
-        <div class="card kpi"><div class="t">Chiffre d'affaires (Vente)</div><div class="v">${fmt(ca)}</div><div class="s">FCFA (crédit compris)</div></div>
+        <div class="card kpi"><div class="t">Chiffre d'affaires (${esc(ctx.vente?.sigle || 'REC')})</div><div class="v">${fmt(ca)}</div><div class="s">FCFA (crédit compris)</div></div>
         ${recouvrables.map((g) => {
           const vs = valides.filter((v) => v.programme_id === g.id);
           return `<div class="card kpi"><div class="t">Ventes ${esc(g.sigle)}</div><div class="v" style="color:var(--bleu)">${fmt(vs.reduce((t, v) => t + Number(v.total), 0))}</div><div class="s">FCFA · ${vs.length} vente(s) · point séparé</div></div>`;

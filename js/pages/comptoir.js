@@ -1,4 +1,4 @@
-// Comptoir : vendre (stock Vente ou programme recouvrable comme PHPSP) ou distribuer gratuitement (programme).
+// Comptoir : vendre (stock REC des produits recouvrables, ou programme recouvrable comme PHPSP) ou distribuer gratuitement (programme).
 import {
   esc, fmt, fmtF, fmtPeremption, q, rpc, erreur, toast, modal, imprimer, chargerCatalogue,
   correspond, trancheAge, TRANCHES, entier, fmtDateHeure, local, estErreurReseau, nouvelId, fmtDate, estPayant, prixDe
@@ -148,8 +148,8 @@ export async function render(el, ctx) {
         <div class="inline"><strong style="margin-right:6px">Ce patient est servi en :</strong>
           <div class="origines" role="group" aria-label="Origine des médicaments">
             ${origines.map((o) => `<button type="button" class="org ${o.id === pr.id ? classeOrigine(o) : ''}" data-origine="${o.id}">
-              <span style="font-weight:700">${esc(o.est_vente ? 'Vente' : o.sigle)}</span>
-              <span class="small" style="opacity:.85">${esc(o.est_vente ? 'Payant' : o.nom + (o.recouvrable ? ' · payant' : ' · gratuit'))}</span></button>`).join('')}
+              <span style="font-weight:700">${esc(o.sigle)}</span>
+              <span class="small" style="opacity:.85">${esc(o.est_vente ? 'Recouvrable · payant' : o.nom + (o.recouvrable ? ' · payant' : ' · gratuit'))}</span></button>`).join('')}
           </div>
         </div>
         ${horsLigne ? `<div class="alert alert-warn" role="status">Hors ligne : stock tel qu’il était le ${esc(fmtDate(catalogue.date))} à ${esc(new Date(catalogue.date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }))}. Les ventes sont gardées sur l’appareil et envoyées au retour d’internet.</div>` : ''}
@@ -436,7 +436,7 @@ export async function render(el, ctx) {
         const totalLocal = total();
         mettreEnFile(charge, {
           numero: 'HL-' + charge.ref_client.slice(0, 8).toUpperCase(),
-          origine: pr.est_vente ? 'Vente' : pr.sigle,
+          origine: pr.sigle,
           total: totalLocal,
           articles: lignesPanier.map(({ p, n }) => p.designation + ' × ' + n).join(', '),
           patient: charge.patient.nom || ''

@@ -23,7 +23,7 @@ export async function render(el, ctx) {
   let aVerifier = new Set(); // lots dont le stock a bougé pendant le comptage
   let aveugle = false;
 
-  const nomOrigine = (id) => { const o = origines.find((x) => x.id === id); return o ? (o.est_vente ? 'Vente' : o.sigle) : '?'; };
+  const nomOrigine = (id) => { const o = origines.find((x) => x.id === id); return o ? (o.sigle) : '?'; };
   const enregistrer = () => {
     if (!local.ecrire(cleBrouillon(origine), brouillon)) toast('Le brouillon ne peut pas être gardé sur cet appareil (stockage indisponible).', 'warn');
   };
@@ -71,7 +71,19 @@ export async function render(el, ctx) {
     };
   }
 
-  function ligneLot(p, l) {
+  // CMM (consommation moyenne mensuelle, 3 derniers mois) et MSD (mois de stock disponible = stock utilisable ÷ CMM),
+  // une fois par produit, sur sa première ligne. En comptage à l'aveugle, le MSD est caché (il trahirait le stock).
+  const virgule = (x) => x.toFixed(1).replace('.', ',');
+  function cellulesCmm(p, premier) {
+    if (!premier) return '<td></td><td></td>';
+    const o = p.origines[origine];
+    const cmm = Number(o?.cmm || 0);
+    const msd = cmm > 0 ? Number(o?.quantite || 0) / cmm : null;
+    return `<td class="num r muted">${cmm ? virgule(cmm) : '—'}</td>
+      <td class="num r" title="Mois de stock disponible : stock utilisable ÷ CMM" style="${msd !== null && msd < 1 && !aveugle ? 'color:var(--rouge);font-weight:700' : ''}">${aveugle ? '<span class="muted">—</span>' : msd === null ? '<span class="muted">—</span>' : virgule(msd)}</td>`;
+  }
+
+  function ligneLot(p, l, premier) {
     const c = brouillon.comptes[l.id];
     const ecart = c ? c.reel - c.attendu : null;
     const perime = l.peremption && joursAvant(l.peremption) < 0;
@@ -79,6 +91,7 @@ export async function render(el, ctx) {
       <td>${esc(p.designation)}${aVerifier.has(l.id) ? '<br><span class="badge b-low">Le stock a changé pendant le comptage : recomptez</span>' : ''}</td>
       <td class="num small">${esc(l.numero || '—')}</td>
       <td class="num small">${fmtPeremption(l.peremption)}${perime ? ' <span class="badge b-out" title="S’il a été jeté, comptez 0">Périmé</span>' : ''}</td>
+      ${cellulesCmm(p, premier)}
       <td class="num r">${aveugle ? '<span class="muted">—</span>' : fmt(l.quantite)}</td>
       <td><label class="sr" for="c-${l.id}">Quantité comptée</label>
         <input class="in num" id="c-${l.id}" data-compte="${l.id}" inputmode="numeric" style="width:96px" value="${c ? c.reel : ''}" placeholder="compté"></td>
@@ -86,11 +99,12 @@ export async function render(el, ctx) {
       <td></td></tr>`;
   }
 
-  function ligneNouveau(p, n) {
+  function ligneNouveau(p, n, premier) {
     return `<tr style="background:#F7F3FD">
       <td>${esc(p.designation)}<br><span class="small" style="color:var(--violet)">Stock de départ / lot non enregistré</span></td>
       <td><label class="sr" for="nn-${n.cle}">Numéro de lot</label><input class="in" id="nn-${n.cle}" data-nv="${n.cle}" data-champ="numero" value="${esc(n.numero)}" placeholder="lot" style="width:110px"></td>
       <td><label class="sr" for="np-${n.cle}">Péremption</label><input class="in" type="date" id="np-${n.cle}" data-nv="${n.cle}" data-champ="peremption" value="${esc(n.peremption)}" style="width:150px"></td>
+      ${cellulesCmm(p, premier)}
       <td class="num r muted">0</td>
       <td><label class="sr" for="nq-${n.cle}">Quantité comptée</label><input class="in num" id="nq-${n.cle}" data-nv="${n.cle}" data-champ="quantite" inputmode="numeric" value="${n.quantite || ''}" placeholder="compté" style="width:96px"></td>
       <td class="num r" style="font-weight:700;color:#1A6438">${n.quantite ? '+' + fmt(n.quantite) : ''}</td>
@@ -129,7 +143,7 @@ export async function render(el, ctx) {
         <div class="small muted">Comptez ce qui est réellement sur les étagères. Les écarts deviennent des corrections ; un produit trouvé sans stock enregistré devient votre stock de départ. Les lots que vous ne comptez pas ne sont pas modifiés.</div></div>
         <div class="inline"><button class="btn" id="feuille">Imprimer la feuille de comptage</button></div></div>
       <div class="origines" role="group" aria-label="Origine à compter">
-        ${origines.map((o) => `<button class="org ${o.id === origine ? (o.est_vente ? 'on' : o.recouvrable ? 'on-r' : 'on-v') : ''}" data-origine="${o.id}"><strong>${esc(o.est_vente ? 'Vente' : o.sigle)}</strong><span class="small">${esc(o.est_vente ? 'stock payant' : o.recouvrable ? o.nom + ' · payant' : o.nom)}</span></button>`).join('')}
+        ${origines.map((o) => `<button class="org ${o.id === origine ? (o.est_vente ? 'on' : o.recouvrable ? 'on-r' : 'on-v') : ''}" data-origine="${o.id}"><strong>${esc(o.sigle)}</strong><span class="small">${esc(o.est_vente ? 'recouvrable · payant' : o.recouvrable ? o.nom + ' · payant' : o.nom)}</span></button>`).join('')}
       </div>
       ${Object.keys(brouillon.comptes).length || brouillon.nouveaux.length ? `<div class="alert alert-ok">Comptage en cours depuis le ${fmtDate(brouillon.debut)} — il est gardé sur cet appareil jusqu’à la validation.
         <button class="link" id="recommencer">Tout effacer et recommencer</button></div>` : ''}
@@ -143,14 +157,14 @@ export async function render(el, ctx) {
             <label class="check"><input type="checkbox" id="aveugle" ${aveugle ? 'checked' : ''}> Comptage à l’aveugle (cacher le stock du système)</label>
           </div>
           <div class="card"><div class="table-box"><table class="tbl">
-            <thead><tr><th>Produit</th><th>Lot</th><th>Péremption</th><th class="r">Système</th><th>Compté</th><th class="r">Écart</th><th></th></tr></thead>
+            <thead><tr><th>Produit</th><th>Lot</th><th>Péremption</th><th class="r" title="Consommation moyenne mensuelle (3 derniers mois)">CMM</th><th class="r" title="Mois de stock disponible : stock ÷ CMM">MSD</th><th class="r">Système</th><th>Compté</th><th class="r">Écart</th><th></th></tr></thead>
             <tbody>${visibles.map(({ p, lots: ls, nouveaux }) => `
-              ${ls.map((l) => ligneLot(p, l)).join('')}
-              ${nouveaux.map((n) => ligneNouveau(p, n)).join('')}
-              ${!ls.length && !nouveaux.length ? `<tr><td>${esc(p.designation)}</td><td colspan="2" class="small muted">Aucun stock enregistré</td><td class="num r muted">0</td>
+              ${ls.map((l, i) => ligneLot(p, l, i === 0)).join('')}
+              ${nouveaux.map((n, i) => ligneNouveau(p, n, !ls.length && i === 0)).join('')}
+              ${!ls.length && !nouveaux.length ? `<tr><td>${esc(p.designation)}</td><td colspan="2" class="small muted">Aucun stock enregistré</td>${cellulesCmm(p, true)}<td class="num r muted">0</td>
                 <td colspan="3"><button class="btn btn-sm" data-ajout="${p.id}">J’en ai trouvé : saisir</button></td></tr>`
-                : `<tr><td colspan="7" style="padding:4px 12px 10px"><button class="link small" data-ajout="${p.id}">+ autre lot de ${esc(p.designation)}</button></td></tr>`}`).join('')
-              || '<tr><td colspan="7" class="muted">Aucun produit.</td></tr>'}</tbody>
+                : `<tr><td colspan="9" style="padding:4px 12px 10px"><button class="link small" data-ajout="${p.id}">+ autre lot de ${esc(p.designation)}</button></td></tr>`}`).join('')
+              || '<tr><td colspan="9" class="muted">Aucun produit.</td></tr>'}</tbody>
           </table></div></div>
           <div><button class="btn" id="ajout-produit">+ Ajouter un produit qui n’est pas dans la liste</button></div>
         </section>
@@ -296,10 +310,15 @@ export async function render(el, ctx) {
         <div style="text-align:right">Date : ____ / ____ / ________<br>Compté par : ____________________</div>
       </div>
       <table class="ft" style="margin-top:12px">
-        <thead><tr><th style="width:38%">Produit</th><th>Lot</th><th>Péremption</th>${aveugle ? '' : '<th>Stock système</th>'}<th style="width:14%">Compté</th><th style="width:18%">Observation</th></tr></thead>
-        <tbody>${lignes.map(({ p, lots: ls }) => (ls.length ? ls : [null]).map((l) => `<tr>
+        <thead><tr><th style="width:34%">Produit</th><th>Lot</th><th>Péremption</th><th>CMM</th>${aveugle ? '' : '<th>MSD</th><th>Stock système</th>'}<th style="width:13%">Compté</th><th style="width:16%">Observation</th></tr></thead>
+        <tbody>${lignes.map(({ p, lots: ls }) => (ls.length ? ls : [null]).map((l, i) => {
+          const o = p.origines[origine];
+          const cmm = Number(o?.cmm || 0);
+          return `<tr>
           <td>${esc(p.designation)}</td><td>${esc(l?.numero || '')}</td><td>${l ? fmtPeremption(l.peremption) : ''}</td>
-          ${aveugle ? '' : `<td class="n">${l ? fmt(l.quantite) : '0'}</td>`}<td></td><td></td></tr>`).join('')).join('')}</tbody>
+          <td class="n">${i === 0 && cmm ? virgule(cmm) : ''}</td>
+          ${aveugle ? '' : `<td class="n">${i === 0 && cmm ? virgule(Number(o?.quantite || 0) / cmm) : ''}</td><td class="n">${l ? fmt(l.quantite) : '0'}</td>`}<td></td><td></td></tr>`;
+        }).join('')).join('')}</tbody>
       </table>
       <div style="display:flex;justify-content:space-between;margin-top:24px;font-size:12px"><div>Signature de la personne qui a compté</div><div>Visa du gérant</div></div>
     </div>`;

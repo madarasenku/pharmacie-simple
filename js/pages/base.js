@@ -44,8 +44,8 @@ export async function render(el, ctx) {
           <button class="btn btn-v" id="nv-prog">+ Nouveau programme</button></div></div>
         <div class="table-box"><table class="tbl">
           <thead><tr><th style="width:36px"><span class="sr">Choisir</span></th><th>Nom</th><th>Sigle</th><th>Type</th><th>Rapport</th><th>Catégories de bénéficiaires</th><th>Envoyer à</th><th class="r">Produits</th><th>État</th><th></th></tr></thead>
-          <tbody>${progs.map((g) => `<tr><td>${g.est_vente ? '' : `<input type="checkbox" class="case" data-choix-prog="${g.id}" ${choixProgrammes.has(g.id) ? 'checked' : ''} aria-label="Choisir ${esc(g.nom)}">`}</td><td><strong>${esc(g.nom)}</strong>${g.est_vente ? ' <span class="badge b-ok">Vente</span>' : ''}</td><td class="num">${esc(g.sigle)}</td>
-            <td><span class="badge ${g.est_vente ? 'b-ok' : g.recouvrable ? 'b-rec' : 'b-prog'}">${g.est_vente ? 'Vente' : g.recouvrable ? 'Recouvrable (payant)' : 'Gratuit'}</span></td>
+          <tbody>${progs.map((g) => `<tr><td>${g.est_vente ? '' : `<input type="checkbox" class="case" data-choix-prog="${g.id}" ${choixProgrammes.has(g.id) ? 'checked' : ''} aria-label="Choisir ${esc(g.nom)}">`}</td><td><strong>${esc(g.nom)}</strong>${g.est_vente ? ' <span class="badge b-ok">Pharmacie</span>' : ''}</td><td class="num">${esc(g.sigle)}</td>
+            <td><span class="badge ${g.est_vente ? 'b-ok' : g.recouvrable ? 'b-rec' : 'b-prog'}">${g.est_vente ? 'Produits recouvrables (payant)' : g.recouvrable ? 'Recouvrable (payant)' : 'Gratuit'}</span></td>
             <td>${esc(g.frequence)}</td><td class="small">${esc((g.categories || []).join(', '))}</td><td class="small">${esc(g.destinataire || '')}</td>
             <td class="num r">${produits.filter((p) => liens.has(p.id + ':' + g.id)).length}</td>
             <td><span class="badge ${g.actif ? 'b-ok' : 'b-low'}">${g.actif ? 'Actif' : 'Inactif'}</span></td>
@@ -71,7 +71,7 @@ export async function render(el, ctx) {
           <thead><tr><th style="width:36px"><input type="checkbox" class="case" id="tout-choisir" aria-label="Choisir tous les produits affichés"></th><th>Produit</th><th>Code-barres</th><th class="r">Prix achat</th><th class="r">Prix vente</th>${progs.filter((g) => !g.est_vente && g.actif).map((g) => (g.recouvrable
               ? `<th class="r" style="color:var(--bleu)" title="Prix de vente ${esc(g.nom)} (vide = prix de vente normal)">Prix ${esc(g.sigle)}</th>`
               : `<th class="r" style="color:var(--violet)" title="Valeur d’une unité ${esc(g.nom)}, pour le stock et les points du programme : rien n’est vendu (vide = prix de vente normal)">Valeur ${esc(g.sigle)}</th>`)).join('')}<th class="r">Min.</th>
-            ${progs.map((g) => `<th class="${g.est_vente ? '' : 'prog-col'}" style="text-align:center" title="${esc(g.nom)}">${esc(g.est_vente ? 'Vente' : g.sigle)}</th>`).join('')}<th></th></tr></thead>
+            ${progs.map((g) => `<th class="${g.est_vente ? '' : 'prog-col'}" style="text-align:center" title="${esc(g.nom)}">${esc(g.sigle)}</th>`).join('')}<th></th></tr></thead>
           <tbody>${liste.map((p) => `<tr style="${p.actif ? '' : 'opacity:.55'}">
             <td><input type="checkbox" class="case" data-choix-prod="${p.id}" ${choixProduits.has(p.id) ? 'checked' : ''} aria-label="Choisir ${esc(p.designation)}"></td>
             <td style="min-width:240px">${esc(p.designation)}${p.presentation ? `<br><span class="small muted">${esc(p.presentation)}</span>` : ''}</td>

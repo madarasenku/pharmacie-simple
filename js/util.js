@@ -66,8 +66,8 @@ export const nombre = (v) => {
 
 // Origines : la Vente et les programmes « recouvrables » (PHPSP…) sont payants ; les autres programmes sont gratuits
 export const estPayant = (g) => !!g && (g.est_vente || !!g.recouvrable);
-export const nomOrigine = (g) => (!g ? '?' : g.est_vente ? 'Vente' : g.sigle);
-export const typeOrigine = (g) => (!g ? '' : g.est_vente ? 'Payant' : g.recouvrable ? 'Recouvrable · payant' : 'Gratuit');
+export const nomOrigine = (g) => (!g ? '?' : g.sigle);
+export const typeOrigine = (g) => (!g ? '' : g.est_vente ? 'Recouvrable · payant' : g.recouvrable ? 'Recouvrable · payant' : 'Gratuit');
 // Prix d'un produit pour une origine : prix propre à l'origine (ex. PHPSP), sinon son prix de vente
 export const prixDe = (p, origineId) => Number(p?.origines?.[origineId]?.prix ?? p?.prix_vente ?? 0);
 

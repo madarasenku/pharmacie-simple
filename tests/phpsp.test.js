@@ -40,17 +40,17 @@ lancerTest('PHPSP — point séparé du point normal', async (r) => {
     const { page, erreurs } = app;
     await aller(page, 'point');
     const normal = await page.$eval('#contenu', (c) => c.textContent.replace(/\s+/g, ' '));
-    r.ok('point normal : seulement la Vente (50 F), pas les 150 F de PHPSP', /Chiffre d'affaires\s*50\s*FCFA/.test(normal) && !normal.includes('150'), normal.slice(0, 300));
+    r.ok('Point PR.REC : seulement les produits recouvrables (50 F), pas les 150 F de PHPSP', normal.includes('Point PR.REC') && /Chiffre d'affaires\s*50\s*FCFA/.test(normal) && !/Chiffre d'affaires\s*150/.test(normal), normal.slice(0, 300));
     await page.click('[data-vue="5"]');
     await page.waitForSelector('h1:text("Point PHPSP")');
     const point = await page.$eval('#contenu', (c) => c.textContent.replace(/\s+/g, ' '));
-    r.ok('point PHPSP : ses recettes (150 F, 1 vente)', /Recettes PHPSP\s*150\s*FCFA\s*·\s*1 vente/.test(point), point.slice(0, 400));
+    r.ok('point PHPSP : présenté comme le point PR.REC (chiffre d’affaires 150 F, 1 vente, bénéfice 50 F)', /Chiffre d'affaires\s*150\s*FCFA\s*·\s*1 vente/.test(point) && /Bénéfice estimé\s*50\s*FCFA/.test(point), point.slice(0, 400));
     r.ok('point PHPSP : détail par produit', point.includes('PARACETAMOL 500 MG CP') && point.includes('TOTAL ENCAISSÉ'));
     r.ok('point PHPSP imprimable', await page.$('#imprimer'));
 
     await aller(page, 'journee');
     const jour = await page.$eval('#contenu', (c) => c.textContent.replace(/\s+/g, ' '));
-    r.ok('Ma journée : PHPSP compté à part', /Chiffre d'affaires \(Vente\)\s*50\s*FCFA/.test(jour) && /Ventes PHPSP\s*150\s*FCFA/.test(jour), jour.slice(0, 400));
+    r.ok('Ma journée : PHPSP compté à part', /Chiffre d'affaires \(REC\)\s*50\s*FCFA/.test(jour) && /Ventes PHPSP\s*150\s*FCFA/.test(jour), jour.slice(0, 400));
     r.check('aucune erreur JavaScript', erreurs, []);
   } finally { await app.fermer(); }
 });
