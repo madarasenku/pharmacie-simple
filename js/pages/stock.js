@@ -94,11 +94,11 @@ export async function render(el, ctx) {
             .map(([k, l, n]) => `<button class="chip ${filtre === k ? 'on' : ''}" data-filtre="${k}">${l} <span class="num">${n}</span></button>`).join('')}
         </div>
       </div>
-      <div class="card"><div class="table-box"><table class="tbl">
-        <thead><tr><th>Produit</th>${plusieurs ? cols.map((o) => `<th class="r ${o.est_vente ? '' : 'prog-col'}">${esc(o.sigle)}</th>`).join('') + '<th class="r">Total</th>' : `<th class="r">Stock ${esc(nom(vue))}</th>`}${voirValeurs ? (plusieurs ? '' : `<th class="r">Prix ${esc(nom(vue))}</th>`) + '<th class="r">Valeur (F)</th>' : ''}<th class="r">Conso / mois</th><th class="r" title="Mois de stock disponible : stock ÷ consommation mensuelle">MSD</th><th>Péremption</th><th>État</th></tr></thead>
+      <div class="card"><div class="table-box defile"><table class="tbl">
+        <thead><tr><th class="fixe">Produit</th>${plusieurs ? cols.map((o) => `<th class="r ${o.est_vente ? '' : 'prog-col'}">${esc(o.sigle)}</th>`).join('') + '<th class="r">Total</th>' : `<th class="r">Stock ${esc(nom(vue))}</th>`}${voirValeurs ? (plusieurs ? '' : `<th class="r">Prix ${esc(nom(vue))}</th>`) + '<th class="r">Valeur (F)</th>' : ''}<th class="r">Conso / mois</th><th class="r" title="Mois de stock disponible : stock ÷ consommation mensuelle">MSD</th><th>Péremption</th><th>État</th></tr></thead>
         <tbody>${liste.map(({ p, e }) => {
           const c = chiffres(p);
-          return `<tr class="clic" data-produit="${p.id}"><td>${esc(p.designation)}</td>
+          return `<tr class="clic" data-produit="${p.id}"><td class="fixe">${esc(p.designation)}</td>
             ${plusieurs ? cols.map((o) => `<td class="num r ${o.est_vente ? '' : 'prog-col'}" style="${o.est_vente ? 'font-weight:600' : ''}">${p.origines[o.id] ? fmt(p.origines[o.id].quantite) : '—'}</td>`).join('') : ''}
             <td class="num r" style="font-weight:700">${fmt(c.total)}</td>${voirValeurs ? (plusieurs ? '' : `<td class="num r">${fmt(prixDe(p, vue))}</td>`) + `<td class="num r">${fmt(valeurDe(p))}</td>` : ''}<td class="num r muted">${c.cmm ? c.cmm.toFixed(1).replace('.', ',') : '—'}</td>
             <td class="num r" style="${c.cmm && c.total / c.cmm < 1 ? 'color:var(--rouge);font-weight:700' : ''}">${c.cmm ? (c.total / c.cmm).toFixed(1).replace('.', ',') : '—'}</td>

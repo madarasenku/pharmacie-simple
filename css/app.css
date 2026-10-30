@@ -210,6 +210,18 @@ table.tbl { width: 100%; border-collapse: collapse; }
 .tbl tr.off td.keep { text-decoration: none; }
 .tbl .prog-col { color: var(--violet); }
 .tbl input.in { min-height: 38px; font-size: 14px; }
+/* Longs tableaux (Base, Mon stock, Inventaire) : l'en-tête reste visible quand on descend,
+   et le nom du produit reste visible quand on fait défiler vers la droite */
+.table-box.defile { max-height: calc(100vh - 140px); max-height: calc(100dvh - 140px); overflow: auto; }
+.table-box.defile thead th { position: sticky; top: 0; z-index: 3; box-shadow: inset 0 -1px 0 var(--bord); }
+.table-box.defile .fixe, .table-box.defile .fixe2 { position: sticky; left: 0; z-index: 2; background: #FFFFFF; }
+.table-box.defile .col-case { width: 46px; min-width: 46px; max-width: 46px; }
+.table-box.defile .fixe2 { left: 46px; min-width: 220px; box-shadow: inset -1px 0 0 var(--bord); }
+.table-box.defile td.fixe:not(.col-case) { min-width: 200px; box-shadow: inset -1px 0 0 var(--bord); }
+.table-box.defile thead .fixe, .table-box.defile thead .fixe2 { z-index: 4; background: #F8FAF9; }
+.table-box.defile tr.clic:hover td.fixe { background: #F3F8F5; }
+.table-box.defile tr.sel td.fixe { background: #E8F4EE; }
+.tbl th.col-origine, .tbl td.col-origine { padding-left: 6px; padding-right: 6px; min-width: 52px; }
 
 /* ---------- Comptoir ---------- */
 .origines { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -307,6 +319,10 @@ details.patient summary { min-height: 48px; display: flex; align-items: center; 
   .kpi .v { font-size: 22px; }
   .kpi .s { font-size: 12px; }
   .topbar { padding: 8px 12px; }
+  /* Téléphone : le nom du produit fixé à gauche reste étroit pour laisser voir les colonnes */
+  .table-box.defile .fixe2 { min-width: 140px; max-width: 160px; }
+  .table-box.defile td.fixe:not(.col-case) { min-width: 130px; max-width: 150px; }
+  .table-box.defile th.fixe:not(.col-case) { min-width: 130px; }
   .brand-nom { font-size: 15px; }
   .user-box { width: 100%; justify-content: space-between; }
   .user-box .qui { text-align: left; margin-right: auto; }

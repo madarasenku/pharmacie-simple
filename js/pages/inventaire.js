@@ -88,7 +88,7 @@ export async function render(el, ctx) {
     const ecart = c ? c.reel - c.attendu : null;
     const perime = l.peremption && joursAvant(l.peremption) < 0;
     return `<tr class="${aVerifier.has(l.id) ? 'sel' : ''}">
-      <td>${esc(p.designation)}${aVerifier.has(l.id) ? '<br><span class="badge b-low">Le stock a changé pendant le comptage : recomptez</span>' : ''}</td>
+      <td class="fixe">${esc(p.designation)}${aVerifier.has(l.id) ? '<br><span class="badge b-low">Le stock a changé pendant le comptage : recomptez</span>' : ''}</td>
       <td class="num small">${esc(l.numero || '—')}</td>
       <td class="num small">${fmtPeremption(l.peremption)}${perime ? ' <span class="badge b-out" title="S’il a été jeté, comptez 0">Périmé</span>' : ''}</td>
       ${cellulesCmm(p, premier)}
@@ -101,7 +101,7 @@ export async function render(el, ctx) {
 
   function ligneNouveau(p, n, premier) {
     return `<tr style="background:#F7F3FD">
-      <td>${esc(p.designation)}<br><span class="small" style="color:var(--violet)">Stock de départ / lot non enregistré</span></td>
+      <td class="fixe" style="background:#F7F3FD">${esc(p.designation)}<br><span class="small" style="color:var(--violet)">Stock de départ / lot non enregistré</span></td>
       <td><label class="sr" for="nn-${n.cle}">Numéro de lot</label><input class="in" id="nn-${n.cle}" data-nv="${n.cle}" data-champ="numero" value="${esc(n.numero)}" placeholder="lot" style="width:110px"></td>
       <td><label class="sr" for="np-${n.cle}">Péremption</label><input class="in" type="date" id="np-${n.cle}" data-nv="${n.cle}" data-champ="peremption" value="${esc(n.peremption)}" style="width:150px"></td>
       ${cellulesCmm(p, premier)}
@@ -156,12 +156,12 @@ export async function render(el, ctx) {
               .map(([k, l]) => `<button class="chip ${filtre === k ? 'on' : ''}" data-filtre="${k}">${l}</button>`).join('')}
             <label class="check"><input type="checkbox" id="aveugle" ${aveugle ? 'checked' : ''}> Comptage à l’aveugle (cacher le stock du système)</label>
           </div>
-          <div class="card"><div class="table-box"><table class="tbl">
-            <thead><tr><th>Produit</th><th>Lot</th><th>Péremption</th><th class="r" title="Consommation moyenne mensuelle (3 derniers mois)">CMM</th><th class="r" title="Mois de stock disponible : stock ÷ CMM">MSD</th><th class="r">Système</th><th>Compté</th><th class="r">Écart</th><th></th></tr></thead>
+          <div class="card"><div class="table-box defile"><table class="tbl">
+            <thead><tr><th class="fixe">Produit</th><th>Lot</th><th>Péremption</th><th class="r" title="Consommation moyenne mensuelle (3 derniers mois)">CMM</th><th class="r" title="Mois de stock disponible : stock ÷ CMM">MSD</th><th class="r">Système</th><th>Compté</th><th class="r">Écart</th><th></th></tr></thead>
             <tbody>${visibles.map(({ p, lots: ls, nouveaux }) => `
               ${ls.map((l, i) => ligneLot(p, l, i === 0)).join('')}
               ${nouveaux.map((n, i) => ligneNouveau(p, n, !ls.length && i === 0)).join('')}
-              ${!ls.length && !nouveaux.length ? `<tr><td>${esc(p.designation)}</td><td colspan="2" class="small muted">Aucun stock enregistré</td>${cellulesCmm(p, true)}<td class="num r muted">0</td>
+              ${!ls.length && !nouveaux.length ? `<tr><td class="fixe">${esc(p.designation)}</td><td colspan="2" class="small muted">Aucun stock enregistré</td>${cellulesCmm(p, true)}<td class="num r muted">0</td>
                 <td colspan="3"><button class="btn btn-sm" data-ajout="${p.id}">J’en ai trouvé : saisir</button></td></tr>`
                 : `<tr><td colspan="9" style="padding:4px 12px 10px"><button class="link small" data-ajout="${p.id}">+ autre lot de ${esc(p.designation)}</button></td></tr>`}`).join('')
               || '<tr><td colspan="9" class="muted">Aucun produit.</td></tr>'}</tbody>

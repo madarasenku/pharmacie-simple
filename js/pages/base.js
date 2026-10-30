@@ -66,23 +66,24 @@ export async function render(el, ctx) {
             <button class="btn btn-p" id="nv-prod">+ Nouveau produit</button>
           </div>
         </div>
-        <div class="small muted" style="padding:8px 18px">Les prix et le minimum se modifient directement dans le tableau (enregistrement automatique).</div>
-        <div class="table-box"><table class="tbl">
-          <thead><tr><th style="width:36px"><input type="checkbox" class="case" id="tout-choisir" aria-label="Choisir tous les produits affichés"></th><th>Produit</th><th>Code-barres</th><th class="r">Prix achat</th><th class="r">Prix vente</th>${progs.filter((g) => !g.est_vente && g.actif).map((g) => (g.recouvrable
+        <div class="small muted" style="padding:8px 18px">Cochez juste à côté du nom l’origine de chaque produit (${esc(progs.filter((g) => g.actif).map((g) => g.sigle).join(', '))}). Les prix et le minimum se modifient directement dans le tableau (enregistrement automatique). L’en-tête et le nom du produit restent visibles quand vous faites défiler.</div>
+        <div class="table-box defile"><table class="tbl">
+          <thead><tr><th class="fixe col-case"><input type="checkbox" class="case" id="tout-choisir" aria-label="Choisir tous les produits affichés"></th><th class="fixe2">Produit</th>
+            ${progs.map((g) => `<th class="${g.est_vente ? '' : 'prog-col'} col-origine" style="text-align:center" title="${esc(g.nom)}">${esc(g.sigle)}</th>`).join('')}
+            <th class="r">Prix achat</th><th class="r">Prix vente</th>${progs.filter((g) => !g.est_vente && g.actif).map((g) => (g.recouvrable
               ? `<th class="r" style="color:var(--bleu)" title="Prix de vente ${esc(g.nom)} (vide = prix de vente normal)">Prix ${esc(g.sigle)}</th>`
-              : `<th class="r" style="color:var(--violet)" title="Valeur d’une unité ${esc(g.nom)}, pour le stock et les points du programme : rien n’est vendu (vide = prix de vente normal)">Valeur ${esc(g.sigle)}</th>`)).join('')}<th class="r">Min.</th>
-            ${progs.map((g) => `<th class="${g.est_vente ? '' : 'prog-col'}" style="text-align:center" title="${esc(g.nom)}">${esc(g.sigle)}</th>`).join('')}<th></th></tr></thead>
+              : `<th class="r" style="color:var(--violet)" title="Valeur d’une unité ${esc(g.nom)}, pour le stock et les points du programme : rien n’est vendu (vide = prix de vente normal)">Valeur ${esc(g.sigle)}</th>`)).join('')}<th class="r">Min.</th><th>Code-barres</th><th></th></tr></thead>
           <tbody>${liste.map((p) => `<tr style="${p.actif ? '' : 'opacity:.55'}">
-            <td><input type="checkbox" class="case" data-choix-prod="${p.id}" ${choixProduits.has(p.id) ? 'checked' : ''} aria-label="Choisir ${esc(p.designation)}"></td>
-            <td style="min-width:240px">${esc(p.designation)}${p.presentation ? `<br><span class="small muted">${esc(p.presentation)}</span>` : ''}</td>
-            <td class="num small">${esc(p.code_barres || '—')}</td>
+            <td class="fixe col-case"><input type="checkbox" class="case" data-choix-prod="${p.id}" ${choixProduits.has(p.id) ? 'checked' : ''} aria-label="Choisir ${esc(p.designation)}"></td>
+            <td class="fixe2">${esc(p.designation)}${p.presentation ? `<br><span class="small muted">${esc(p.presentation)}</span>` : ''}</td>
+            ${progs.map((g) => `<td class="col-origine" style="text-align:center"><input type="checkbox" style="width:22px;height:22px;accent-color:${g.est_vente ? 'var(--vert)' : 'var(--violet)'}" data-lien="${p.id}:${g.id}" ${liens.has(p.id + ':' + g.id) ? 'checked' : ''} aria-label="${esc(p.designation)} : ${esc(g.nom)}"></td>`).join('')}
             <td class="r"><input class="in num r" style="width:90px" data-champ="prix_achat" data-id="${p.id}" value="${Number(p.prix_achat)}" aria-label="Prix d'achat ${esc(p.designation)}"></td>
             <td class="r"><input class="in num r" style="width:90px;${Number(p.prix_vente) ? '' : 'background:#FFF0CC'}" data-champ="prix_vente" data-id="${p.id}" value="${Number(p.prix_vente)}" aria-label="Prix de vente ${esc(p.designation)}"></td>
             ${progs.filter((g) => !g.est_vente && g.actif).map((g) => liens.has(p.id + ':' + g.id)
               ? `<td class="r"><input class="in num r" style="width:90px" data-prix-origine="${p.id}:${g.id}" value="${prixOrigine.has(p.id + ':' + g.id) ? prixOrigine.get(p.id + ':' + g.id) : ''}" placeholder="${Number(p.prix_vente)}" aria-label="${g.recouvrable ? 'Prix' : 'Valeur'} ${esc(g.sigle)} ${esc(p.designation)}"></td>`
               : '<td class="r muted">—</td>').join('')}
             <td class="r"><input class="in num r" style="width:70px" data-champ="stock_min" data-id="${p.id}" value="${p.stock_min}" aria-label="Stock minimum ${esc(p.designation)}"></td>
-            ${progs.map((g) => `<td style="text-align:center"><input type="checkbox" style="width:22px;height:22px;accent-color:${g.est_vente ? 'var(--vert)' : 'var(--violet)'}" data-lien="${p.id}:${g.id}" ${liens.has(p.id + ':' + g.id) ? 'checked' : ''} aria-label="${esc(p.designation)} : ${esc(g.nom)}"></td>`).join('')}
+            <td class="num small">${esc(p.code_barres || '—')}</td>
             <td><button class="btn btn-sm" data-prod="${p.id}">Modifier</button></td></tr>`).join('')}</tbody>
         </table></div>
       </section>`;
