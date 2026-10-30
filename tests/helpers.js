@@ -56,7 +56,7 @@ const UTILISATEURS = {
 
 function donneesDeBase() {
   const programmes = [
-    { id: 1, code: 'VENTE', nom: 'Vente (produits recouvrables)', sigle: 'VENTE', est_vente: true, frequence: 'mensuel', categories: [], actif: true, ordre: 0 },
+    { id: 1, code: 'VENTE', nom: 'Produits recouvrables', sigle: 'REC', est_vente: true, frequence: 'mensuel', categories: [], actif: true, ordre: 0 },
     { id: 2, code: 'PNLP', nom: 'Paludisme', sigle: 'PNLP', est_vente: false, frequence: 'mensuel', categories: ['Enfant < 5 ans', 'Femme enceinte', 'Autre'], actif: true, ordre: 10 },
     { id: 3, code: 'GRAT', nom: 'Gratuité ciblée', sigle: 'GRAT', est_vente: false, frequence: 'mensuel', categories: ['Enfant < 5 ans', 'Femme enceinte'], actif: true, ordre: 20 },
     { id: 4, code: 'PF', nom: 'Planification familiale', sigle: 'PF', est_vente: false, frequence: 'mensuel', categories: [], actif: true, ordre: 30 },
@@ -89,7 +89,7 @@ function donneesDeBase() {
       { cle: 'droits_responsable', valeur: { vendre: true, entree: true, credit: true, programmes: true, corriger: true, annuler: true, prix: false, rapports: true, base: false } },
       { cle: 'pharmacie', valeur: { nom: 'Pharmacie Test', region: 'SUD COMOÉ', district: 'GRAND-BASSAM', etablissement: 'CSR TEST' } },
       { cle: 'derniere_sauvegarde', valeur: { date: new Date().toISOString(), par: 'Gérante Test' } },
-      { cle: 'version_base', valeur: { version: 11 } }
+      { cle: 'version_base', valeur: { version: 12 } }
     ],
     programmes, produits, lots, produits_programmes: liens,
     clients: [{ id: 1, nom: 'TRAORE Adama', telephone: '0700000001', plafond: 10000 }],
@@ -216,7 +216,7 @@ function rpcParDefaut(db, etat) {
       if (etat.utilisateur?.role !== 'gerant') throw new Error('Action non autorisée (gérant).');
       const auj = isoJour(new Date());
       const prog = (id) => db.programmes.find((g) => g.id === id);
-      const nomOrigine = (g) => (g.est_vente ? 'Vente' : g.sigle);
+      const nomOrigine = (g) => g.sigle;
       const prix = db.produits_programmes.filter((l) => {
         const p = db.produits.find((x) => x.id === l.produit_id), g = prog(l.programme_id);
         return p?.actif && g?.actif && (g.est_vente || g.recouvrable) && !Number(l.prix_vente ?? p.prix_vente);

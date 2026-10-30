@@ -1,4 +1,4 @@
-// Rapport « produits commandes recouvrables » du district, rempli depuis le stock Vente,
+// Rapport « produits commandes recouvrables » du district, rempli depuis le stock REC (produits recouvrables),
 // puis suivi des commandes envoyées (ce qui a été reçu, ce qui reste à recevoir).
 import { esc, fmt, fmtF, fmtDate, fmtPeremption, q, rpc, tout, isoJour, isoMois, nomMois, imprimer, csv, telecharger, entier, erreur, toast, modal, confirmer } from '../util.js';
 
@@ -101,7 +101,7 @@ export async function render(el, ctx) {
     const dejaCeMois = commandes.filter((c) => String(c.mois).slice(0, 7) === mois && c.statut !== 'annulee');
     el.innerHTML = `
       <div class="page-head"><div><h1>Rapport produits commandes recouvrables</h1>
-        <div class="small muted">Rempli automatiquement depuis le stock Vente. Vous pouvez corriger la quantité commandée avant d'imprimer : la correction est enregistrée pour tous les postes (case jaune).</div></div>
+        <div class="small muted">Rempli automatiquement depuis le stock ${esc(vente.sigle)} (produits recouvrables). Vous pouvez corriger la quantité commandée avant d'imprimer : la correction est enregistrée pour tous les postes (case jaune).</div></div>
         <div class="inline" style="align-items:flex-end">
           <div><label class="lbl" for="mois">Période</label><input class="in" type="month" id="mois" value="${mois}" max="${isoMois()}"></div>
           <button class="btn" id="csv">Exporter Excel</button>

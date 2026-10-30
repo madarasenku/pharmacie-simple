@@ -270,7 +270,7 @@ do $$ begin
   assert (select details ->> 'apres' from journal where action = 'prix' order by id desc limit 1) = '125.00', 'changement de prix journalisé';
   perform enregistrer_entree(jsonb_build_object('produit_id', pg_temp.v('amox'), 'programme_id', pg_temp.v('vente'), 'quantite', 1, 'prix_vente', 130));
   assert (select count(*) from journal where action = 'prix') = 2, 'prix changé à l''entrée : une seule ligne de journal de plus';
-  assert (select (valeur ->> 'version')::int from parametres where cle = 'version_base') = 11, 'version de la base';
+  assert (select (valeur ->> 'version')::int from parametres where cle = 'version_base') = 12, 'version de la base';
 end $$;
 select pg_temp.qui('awa');
 do $$ declare n int; begin
@@ -380,7 +380,7 @@ do $$ declare sp int; v jsonb; begin
   -- produit à vendre sans prix : l'anomalie donne son NOM
   insert into produits (designation, prix_vente) values ('ZZ SANS PRIX', 0) returning id into sp;
   insert into produits_programmes (produit_id, programme_id) values (sp, pg_temp.v('vente'));
-  assert exists (select 1 from anomalies() where code = 'prix_manquant' and detail = 'ZZ SANS PRIX — Vente' and page = 'base'), 'produit sans prix nommé';
+  assert exists (select 1 from anomalies() where code = 'prix_manquant' and detail = 'ZZ SANS PRIX — REC' and page = 'base'), 'produit sans prix nommé';
   -- vendu à 0 F
   perform ouvrir_caisse(0);
   perform enregistrer_entree(jsonb_build_object('produit_id', sp, 'programme_id', pg_temp.v('vente'), 'quantite', 2));
@@ -507,6 +507,11 @@ do $$ declare x record; begin
   -- Un mois passé : le calcul ne regarde pas les lots d'aujourd'hui
   select * into x from rapport_mensuel(pg_temp.v('vente'), (current_date - interval '1 month')::date) where produit_id = pg_temp.v('rapport');
   assert x.quantite_calculee = 0 and x.stock_disponible = 0, 'mois passé : rien : ' || row_to_json(x)::text;
+end $$;
+
+-- ---------- 13d. Vocabulaire du district : l'origine Vente s'appelle REC ----------
+do $$ begin
+  assert (select sigle = 'REC' and nom = 'Produits recouvrables' from programmes where est_vente), 'origine Vente renommée REC';
 end $$;
 
 -- ---------- 14. Mot de passe temporaire ----------

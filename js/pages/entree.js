@@ -26,7 +26,7 @@ export async function render(el, ctx) {
   const commandeNumero = (id) => commandes.find((c) => c.id === id)?.numero || 'commande';
   const nomOrigine = (id) => {
     const p = ctx.programmes.find((x) => x.id === id);
-    return p ? (p.est_vente ? 'Vente' : p.sigle) : '?';
+    return p ? (p.sigle) : '?';
   };
 
   function dessiner() {

@@ -13,7 +13,7 @@ export async function render(el, ctx) {
   // Origine affichée : « tout » ou un programme (choix gardé sur l'appareil, comme l'Inventaire)
   let vue = local.lire('stock_origine', 'tout');
   if (vue !== 'tout' && !origines.some((o) => o.id === vue)) vue = 'tout';
-  const nom = (id) => { const o = origines.find((x) => x.id === id); return o ? (o.est_vente ? 'Vente' : o.sigle) : '?'; };
+  const nom = (id) => { const o = origines.find((x) => x.id === id); return o ? (o.sigle) : '?'; };
   const visibles = () => (vue === 'tout' ? origines : origines.filter((o) => o.id === vue));
 
   // État d'un produit, calculé seulement sur les origines affichées. « drap » garde TOUS ses signaux
@@ -64,7 +64,7 @@ export async function render(el, ctx) {
       .filter((x) => correspond(x.p, recherche));
     const plusieurs = cols.length > 1;
     const valeurTotale = liste.reduce((s, { p }) => s + valeurDe(p), 0);
-    const nbCols = (plusieurs ? cols.length + 1 : 1) + 4 + (voirValeurs ? (plusieurs ? 1 : 2) : 0);
+    const nbCols = (plusieurs ? cols.length + 1 : 1) + 5 + (voirValeurs ? (plusieurs ? 1 : 2) : 0);
 
     const montrerCommande = vente && (vue === 'tout' || vue === vente.id);
     const aCommander = montrerCommande ? catalogue.filter((p) => p.actif && p.origines[vente.id]).map((p) => {
@@ -83,7 +83,7 @@ export async function render(el, ctx) {
         <div class="inline"><button class="btn" id="export">Exporter Excel</button>${ctx.peut('rapports') ? '<a class="btn" href="#/rapport">Rapport de commande district</a>' : ''}</div></div>
       <div class="origines" role="group" aria-label="Origine affichée">
         <button class="org ${vue === 'tout' ? 'on' : ''}" data-vue="tout"><strong>Tout</strong><span class="small">toutes les origines</span></button>
-        ${origines.map((o) => `<button class="org ${o.id === vue ? (o.est_vente ? 'on' : o.recouvrable ? 'on-r' : 'on-v') : ''}" data-vue="${o.id}"><strong>${esc(o.est_vente ? 'Vente' : o.sigle)}</strong><span class="small">${esc(o.est_vente ? 'stock payant' : o.recouvrable ? o.nom + ' · payant' : o.nom)}</span></button>`).join('')}
+        ${origines.map((o) => `<button class="org ${o.id === vue ? (o.est_vente ? 'on' : o.recouvrable ? 'on-r' : 'on-v') : ''}" data-vue="${o.id}"><strong>${esc(o.sigle)}</strong><span class="small">${esc(o.est_vente ? 'recouvrable · payant' : o.recouvrable ? o.nom + ' · payant' : o.nom)}</span></button>`).join('')}
       </div>
       ${compte('jamais') && ctx.peut('corriger') ? `<div class="alert alert-prog">${compte('jamais')} produit(s) n’ont encore jamais eu de stock enregistré${vue === 'tout' ? '' : ' en ' + esc(nom(vue))}.
         S’ils sont déjà sur vos étagères, saisissez-les dans <a href="#/inventaire">Inventaire</a> (stock de départ) ; sinon faites une <a href="#/entree">entrée</a> à leur réception.</div>` : ''}
@@ -95,21 +95,22 @@ export async function render(el, ctx) {
         </div>
       </div>
       <div class="card"><div class="table-box"><table class="tbl">
-        <thead><tr><th>Produit</th>${plusieurs ? cols.map((o) => `<th class="r ${o.est_vente ? '' : 'prog-col'}">${esc(o.est_vente ? 'Vente' : o.sigle)}</th>`).join('') + '<th class="r">Total</th>' : `<th class="r">Stock ${esc(nom(vue))}</th>`}${voirValeurs ? (plusieurs ? '' : `<th class="r">Prix ${esc(nom(vue))}</th>`) + '<th class="r">Valeur (F)</th>' : ''}<th class="r">Conso / mois</th><th>Péremption</th><th>État</th></tr></thead>
+        <thead><tr><th>Produit</th>${plusieurs ? cols.map((o) => `<th class="r ${o.est_vente ? '' : 'prog-col'}">${esc(o.sigle)}</th>`).join('') + '<th class="r">Total</th>' : `<th class="r">Stock ${esc(nom(vue))}</th>`}${voirValeurs ? (plusieurs ? '' : `<th class="r">Prix ${esc(nom(vue))}</th>`) + '<th class="r">Valeur (F)</th>' : ''}<th class="r">Conso / mois</th><th class="r" title="Mois de stock disponible : stock ÷ consommation mensuelle">MSD</th><th>Péremption</th><th>État</th></tr></thead>
         <tbody>${liste.map(({ p, e }) => {
           const c = chiffres(p);
           return `<tr class="clic" data-produit="${p.id}"><td>${esc(p.designation)}</td>
             ${plusieurs ? cols.map((o) => `<td class="num r ${o.est_vente ? '' : 'prog-col'}" style="${o.est_vente ? 'font-weight:600' : ''}">${p.origines[o.id] ? fmt(p.origines[o.id].quantite) : '—'}</td>`).join('') : ''}
             <td class="num r" style="font-weight:700">${fmt(c.total)}</td>${voirValeurs ? (plusieurs ? '' : `<td class="num r">${fmt(prixDe(p, vue))}</td>`) + `<td class="num r">${fmt(valeurDe(p))}</td>` : ''}<td class="num r muted">${c.cmm ? c.cmm.toFixed(1).replace('.', ',') : '—'}</td>
+            <td class="num r" style="${c.cmm && c.total / c.cmm < 1 ? 'color:var(--rouge);font-weight:700' : ''}">${c.cmm ? (c.total / c.cmm).toFixed(1).replace('.', ',') : '—'}</td>
             <td class="num">${fmtPeremption(c.prochaine)}</td><td><span class="badge ${e.badge}">${esc(e.texte)}</span></td></tr>`;
         }).join('') || `<tr><td colspan="${nbCols}" class="muted">Aucun produit${vue === 'tout' ? '' : ' rattaché à ' + esc(nom(vue))}.</td></tr>`}
-          ${voirValeurs && liste.length ? `<tr><td colspan="${(plusieurs ? cols.length + 1 : 1) + (plusieurs ? 0 : 1) + 1}" style="text-align:right;font-weight:700">VALEUR DU STOCK AFFICHÉ${filtre === 'tout' && !recherche ? '' : ' (liste filtrée)'}</td><td class="num r" style="font-weight:700">${fmt(valeurTotale)}</td><td colspan="3"></td></tr>` : ''}</tbody>
+          ${voirValeurs && liste.length ? `<tr><td colspan="${(plusieurs ? cols.length + 1 : 1) + (plusieurs ? 0 : 1) + 1}" style="text-align:right;font-weight:700">VALEUR DU STOCK AFFICHÉ${filtre === 'tout' && !recherche ? '' : ' (liste filtrée)'}</td><td class="num r" style="font-weight:700">${fmt(valeurTotale)}</td><td colspan="4"></td></tr>` : ''}</tbody>
       </table></div>
         ${voirValeurs ? '<div class="small muted" style="padding:8px 18px 12px">Valeur = stock utilisable × prix de l’origine (prix de vente, prix PHPSP, ou valeur du programme saisie dans la Base). Les lots périmés ne comptent pas.</div>' : ''}</div>
 
       <div class="row">
         ${montrerCommande ? `<section class="card card-pad stack" style="flex:1 1 380px">
-          <h2>À commander (vente)</h2>
+          <h2>À commander (${esc(vente.sigle)})</h2>
           <div class="small muted">Quantité = 2 × consommation mensuelle − stock disponible.</div>
           ${aCommander.map((x) => `<div class="inline" style="justify-content:space-between;border-bottom:1px solid #EDF1EF;padding:6px 0">
             <span>${esc(x.p.designation)}<br><span class="small muted">stock ${x.o.quantite} · conso ${String(x.o.cmm).replace('.', ',')}/mois</span></span><strong class="num">${fmt(x.qte)}</strong></div>`).join('') || '<div class="muted">Rien à commander.</div>'}
@@ -138,10 +139,10 @@ export async function render(el, ctx) {
     };
     el.querySelectorAll('[data-produit]').forEach((tr) => tr.onclick = () => detail(catalogue.find((p) => p.id === Number(tr.dataset.produit))).catch(erreur));
     el.querySelector('#export').onclick = () => {
-      const lignes = [['Produit', ...(plusieurs ? [...cols.map((o) => (o.est_vente ? 'Vente' : o.sigle)), 'Total'] : ['Stock ' + nom(vue)]), ...(voirValeurs ? [...(plusieurs ? [] : ['Prix ' + nom(vue)]), 'Valeur'] : []), 'Conso/mois', 'Péremption', 'État']];
+      const lignes = [['Produit', ...(plusieurs ? [...cols.map((o) => (o.sigle)), 'Total'] : ['Stock ' + nom(vue)]), ...(voirValeurs ? [...(plusieurs ? [] : ['Prix ' + nom(vue)]), 'Valeur'] : []), 'Conso/mois', 'MSD (mois)', 'Péremption', 'État']];
       for (const { p, e } of liste) {
         const c = chiffres(p);
-        lignes.push([p.designation, ...(plusieurs ? cols.map((o) => p.origines[o.id]?.quantite ?? '') : []), c.total, ...(voirValeurs ? [...(plusieurs ? [] : [prixDe(p, vue)]), valeurDe(p)] : []), c.cmm, fmtPeremption(c.prochaine), e.texte]);
+        lignes.push([p.designation, ...(plusieurs ? cols.map((o) => p.origines[o.id]?.quantite ?? '') : []), c.total, ...(voirValeurs ? [...(plusieurs ? [] : [prixDe(p, vue)]), valeurDe(p)] : []), c.cmm, c.cmm ? Math.round((c.total / c.cmm) * 10) / 10 : '', fmtPeremption(c.prochaine), e.texte]);
       }
       telecharger('stock-' + (vue === 'tout' ? 'tout' : nom(vue)) + '-' + isoJour() + '.csv', csv(lignes));
     };
@@ -152,7 +153,7 @@ export async function render(el, ctx) {
       q(sb.from('lots').select('*').eq('produit_id', p.id).order('peremption', { nullsFirst: false })),
       q(sb.from('mouvements').select('*, profiles(nom)').eq('produit_id', p.id).order('created_at', { ascending: false }).limit(40))
     ]);
-    const nom = (id) => { const o = origines.find((x) => x.id === id); return o ? (o.est_vente ? 'Vente' : o.sigle) : '?'; };
+    const nom = (id) => { const o = origines.find((x) => x.id === id); return o ? (o.sigle) : '?'; };
     const peutCorriger = ctx.peut('corriger');
     const m = modal(p.designation, `
       <div class="small muted">${p.code_barres ? 'Code-barres ' + esc(p.code_barres) + ' · ' : ''}Prix de vente ${fmt(p.prix_vente)} F · minimum ${p.stock_min}</div>

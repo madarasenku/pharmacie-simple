@@ -1,7 +1,7 @@
 # Pharmacie Simple — dossier de passation (contexte pour une IA ou un développeur)
 
 > À lire EN ENTIER avant de modifier le code. Il complète le README (qui s'adresse à l'utilisatrice).
-> Version applicative : **1.8.0** · cache du service worker : **pharmacie-simple-v9** · base attendue : **11**
+> Version applicative : **1.9.0** · cache du service worker : **pharmacie-simple-v10** · base attendue : **12**
 
 ## 1. Vue d'ensemble
 
@@ -82,7 +82,8 @@
   Bénéfice d'un programme vendu = `quantite × (prix_unitaire − cout_unitaire)` des lignes de ventes non annulées et non gratuites ;
   pertes = `perime` et `correction` négatives au prix d'achat. Le PHPSP a son propre bénéfice, jamais ajouté à celui de la Vente.
   Prix d'un produit pour un programme = `produits_programmes.prix_vente` sinon `produits.prix_vente` (pour un programme gratuit
-  c'est la « valeur » d'une unité, jamais un prix de vente). Écran : vue `resultats` (« Bénéfices et stock ») de `js/pages/point.js`, filtre `filtre` = 'tous' ou un programme ; colonnes
+  c'est la « valeur » d'une unité, jamais un prix de vente). Écran : `js/pages/point.js`, un point par programme vendu (« Point PR.REC » pour `est_vente`, « Point <sigle> » pour un
+  recouvrable), même présentation (bénéfices, jour par jour, par produit, stock valorisé ; gratuits dans le Point PR.REC) ; colonnes
   Prix et Valeur de `stock.js` visibles seulement avec le droit `rapports`.
 - `anomalies()` (gérant) : contrôle calculé à la demande, jamais stocké — `code`, `gravite` (haute / moyenne / info),
   `titre`, `detail` qui **commence par le nom du produit** (« SALBUTAMOL AMP INJ — Vente »), `page` où corriger, `cle`.
@@ -138,6 +139,9 @@ modules (le test de déploiement le vérifie). Pas de rechargement automatique :
   jamais `new Date('AAAA-MM-JJ')` comparé à `new Date()` (décalage de fuseau).
 - `confirmer()` renvoie `false` si la fenêtre est fermée par la croix, Échap ou un clic à côté.
 - Côte d'Ivoire = UTC+0 toute l'année : les bornes de jour du site et du serveur coïncident.
+- Vocabulaire du district : l'origine `est_vente` a le sigle **REC** (« Produits recouvrables », migration 012). Le site
+  affiche toujours le **sigle** d'une origine (jamais « Vente » en dur) ; les mots « vente / vendre » restent pour l'acte.
+- MSD (mois de stock disponible) = stock utilisable ÷ CMM ; affiché dans Mon stock et à l'Inventaire (caché à l'aveugle).
 - Mon stock : `etatProduit()` renvoie un état affiché (le plus grave : un lot périmé en rayon passe avant la rupture) et
   `drap`, l'ensemble de TOUS les signaux ; les filtres et compteurs utilisent `drap`, jamais l'état affiché seul.
 - Typographie : les chiffres utilisent la police de l'application avec `tabular-nums` (classe `.num`) ; la police à chasse
