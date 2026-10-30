@@ -89,7 +89,7 @@ function donneesDeBase() {
       { cle: 'droits_responsable', valeur: { vendre: true, entree: true, credit: true, programmes: true, corriger: true, annuler: true, prix: false, rapports: true, base: false } },
       { cle: 'pharmacie', valeur: { nom: 'Pharmacie Test', region: 'SUD COMOÉ', district: 'GRAND-BASSAM', etablissement: 'CSR TEST' } },
       { cle: 'derniere_sauvegarde', valeur: { date: new Date().toISOString(), par: 'Gérante Test' } },
-      { cle: 'version_base', valeur: { version: 12 } }
+      { cle: 'version_base', valeur: { version: 13 } }
     ],
     programmes, produits, lots, produits_programmes: liens,
     clients: [{ id: 1, nom: 'TRAORE Adama', telephone: '0700000001', plafond: 10000 }],
@@ -273,6 +273,11 @@ function rpcParDefaut(db, etat) {
           pertes: -somme(dansP, (m) => ['perime', 'correction'].includes(m.type)),
           fin: somme((j) => j < a.p_fin, () => true) };
       }).sort((x, y) => x.programme_id - y.programme_id || x.designation.localeCompare(y.designation));
+    },
+    journal_connexion: (a) => {
+      db.journal.push({ id: db.journal.length + 100, user_id: etat.utilisateur?.id, action: a.p_evenement, details: { texte: a.p_evenement === 'connexion' ? 'Connexion' : 'Déconnexion' },
+        created_at: new Date().toISOString(), profiles: { nom: etat.utilisateur?.nom } });
+      return null;
     },
     signaler_erreur: (a) => {
       const u = etat.utilisateur;

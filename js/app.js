@@ -176,6 +176,8 @@ function afficherConnexion(message = '') {
           if (!mdp) throw new Error('Saisissez votre mot de passe.');
           const { error } = await sb.auth.signInWithPassword({ email: versEmail(identifiant), password: mdp });
           if (error) throw error;
+          // Journal du gérant : qui s'est connecté, et quand (sans bloquer l'ouverture)
+          sb.rpc('journal_connexion', { p_evenement: 'connexion' }).then(() => {}, () => {});
           local.ecrire('dernier_identifiant', identifiant.trim().toLowerCase());
         } else {
           const email = app.querySelector('#email').value.trim();
@@ -326,6 +328,8 @@ function dessinerCadre() {
     const enAttente = lireFile().filter((x) => x.utilisateur === ctx.profil.id).length;
     if (enAttente && !confirm(enAttente + ' vente(s) hors ligne ne sont pas encore envoyées. Elles resteront sur cet appareil et partiront à votre prochaine connexion. Se déconnecter quand même ?')) return;
     if (ctx.horsLigne) { ctx.horsLigne = false; ctx.profil = null; demarre = false; return afficherConnexion(); }
+    // Notée au journal avant de partir (2 secondes au plus : une mauvaise connexion ne bloque pas la sortie)
+    await Promise.race([sb.rpc('journal_connexion', { p_evenement: 'deconnexion' }).then(() => {}, () => {}), new Promise((ok) => setTimeout(ok, 2000))]);
     sb.auth.signOut();
   };
   brancherMonMdp();

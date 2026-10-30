@@ -1,7 +1,7 @@
 # Pharmacie Simple — dossier de passation (contexte pour une IA ou un développeur)
 
 > À lire EN ENTIER avant de modifier le code. Il complète le README (qui s'adresse à l'utilisatrice).
-> Version applicative : **1.9.1** · cache du service worker : **pharmacie-simple-v11** · base attendue : **12**
+> Version applicative : **1.10.0** · cache du service worker : **pharmacie-simple-v12** · base attendue : **13**
 
 ## 1. Vue d'ensemble
 
@@ -144,6 +144,12 @@ modules (le test de déploiement le vérifie). Pas de rechargement automatique :
 - Longs tableaux (Base, Mon stock, Inventaire) : classe `table-box defile` = boîte qui défile, en-tête `sticky` en haut,
   colonne `fixe` (et `fixe2` après la case de choix dans la Base) collée à gauche. Dans la Base, les cases des origines
   viennent juste après le nom du produit, avant les prix.
+- Journal (`journal`, lecture gérant seul) : TOUTES les actions, écrites par des déclencheurs SECURITY DEFINER
+  (migration 013) avec `details.texte`, une phrase lisible : ventes/distributions (déclencheur différé en fin de transaction,
+  lignes et total connus), entrées (`mouvements.type = 'entree'`), produits, programmes, `produits_programmes`, clients,
+  `parametres` (réglages, droits, sauvegarde), `profiles` (rôle, actif, nom), `rapports_corrections` ; connexions par la RPC
+  `journal_connexion`. Les anciennes lignes sans texte sont mises en forme par `detailLisible()` dans reglages.js.
+  Nouvelle action à journaliser : ajouter un déclencheur (ne pas réécrire la fonction métier) et son libellé dans `ACTIONS`.
 - MSD (mois de stock disponible) = stock utilisable ÷ CMM ; affiché dans Mon stock et à l'Inventaire (caché à l'aveugle).
 - Mon stock : `etatProduit()` renvoie un état affiché (le plus grave : un lot périmé en rayon passe avant la rupture) et
   `drap`, l'ensemble de TOUS les signaux ; les filtres et compteurs utilisent `drap`, jamais l'état affiché seul.
