@@ -68,3 +68,39 @@ lancerTest('REVUE — rapport district : lots périmés en rayon signalés avant
     r.check('aucune erreur JavaScript', app.erreurs, []);
   } finally { await app.fermer(); }
 });
+
+lancerTest('REVUE — Base : cases des programmes juste après le nom, en-tête toujours visible', async (r) => {
+  const app = await ouvrir({
+    role: 'gerant',
+    donnees: (db) => {
+      for (let i = 10; i < 40; i++) {
+        db.produits.push({ id: i, designation: 'PRODUIT ' + i, code_barres: null, presentation: null, prix_achat: 50, prix_vente: 100, stock_min: 5, actif: true });
+        db.produits_programmes.push({ produit_id: i, programme_id: 1, prix_vente: null });
+      }
+    }
+  });
+  try {
+    const { page } = app;
+    await aller(page, 'base');
+    const th = await page.$$eval('.table-box.defile thead th', (t) => t.map((x) => x.textContent.trim()));
+    r.check('colonnes : choix, produit, puis une case par origine', th.slice(1, 7), ['Produit', 'REC', 'PNLP', 'GRAT', 'PF', 'PHPSP']);
+    r.ok('cases des origines visibles sans défiler vers la droite (1280 px)', await page.$eval('[data-lien="12:5"]', (c) => c.getBoundingClientRect().right < window.innerWidth));
+    r.check('en-tête collé en haut du tableau', await page.$eval('.table-box.defile thead th', (t) => getComputedStyle(t).position), 'sticky');
+    // Descendre dans le tableau : l'en-tête reste visible au-dessus des lignes
+    await page.$eval('.table-box.defile', (b) => { b.scrollIntoView({ block: 'end' }); b.scrollTop = 900; });
+    await page.waitForTimeout(150);
+    const ok = await page.evaluate(() => {
+      const b = document.querySelector('.table-box.defile');
+      const h = b.querySelector('thead th:nth-child(3)').getBoundingClientRect();
+      const box = b.getBoundingClientRect();
+      return h.top >= box.top - 1 && h.top <= box.top + 2 && h.top >= 54;
+    });
+    r.ok('après avoir descendu : l’en-tête REC / PNLP… est toujours visible', ok);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.$eval('.table-box.defile', (b) => { b.scrollLeft = 300; });
+    await page.waitForTimeout(150);
+    const nom = await page.$eval('.table-box.defile tbody td.fixe2', (td) => td.getBoundingClientRect().left);
+    r.ok('téléphone : le nom du produit reste à gauche quand on défile vers la droite', nom >= 0 && nom < 80, String(nom));
+    r.check('aucune erreur JavaScript', app.erreurs, []);
+  } finally { await app.fermer(); }
+});
