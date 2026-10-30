@@ -176,7 +176,8 @@ export async function render(el, ctx) {
               const o = p.origines[pr.id];
               let badge = estVente ? 'b-ok' : 'b-prog';
               let txt = (pr.est_vente ? 'Stock ' : pr.sigle + ' ') + reste;
-              if (stockDe(p) <= 0) { badge = 'b-out'; txt = 'Rupture'; }
+              // Rien de servable : un lot périmé encore en rayon est signalé (à retirer), sinon c'est une rupture
+              if (stockDe(p) <= 0) { badge = 'b-out'; txt = o?.perimee > 0 ? 'Périmé · à retirer' : 'Rupture'; }
               else if (reste < p.stock_min) { badge = 'b-low'; txt = 'Reste ' + reste; }
               return `<button type="button" class="tile" data-ajout="${p.id}" ${reste <= 0 ? 'disabled' : ''}>
                 <span class="nom">${esc(p.designation)}</span>

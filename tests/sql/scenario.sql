@@ -270,7 +270,7 @@ do $$ begin
   assert (select details ->> 'apres' from journal where action = 'prix' order by id desc limit 1) = '125.00', 'changement de prix journalisé';
   perform enregistrer_entree(jsonb_build_object('produit_id', pg_temp.v('amox'), 'programme_id', pg_temp.v('vente'), 'quantite', 1, 'prix_vente', 130));
   assert (select count(*) from journal where action = 'prix') = 2, 'prix changé à l''entrée : une seule ligne de journal de plus';
-  assert (select (valeur ->> 'version')::int from parametres where cle = 'version_base') = 10, 'version de la base';
+  assert (select (valeur ->> 'version')::int from parametres where cle = 'version_base') = 11, 'version de la base';
 end $$;
 select pg_temp.qui('awa');
 do $$ declare n int; begin
@@ -476,6 +476,37 @@ do $$ begin
   perform pg_temp.refus('select benefices(current_date, current_date + 1)', 'non autorisée');
   perform pg_temp.refus('select stock_valeurs(current_date, current_date + 1)', 'non autorisée');
   perform pg_temp.refus('select benefices(current_date, current_date + 1, 1)', 'non autorisée');
+end $$;
+
+-- ---------- 13c. Revue pharmacien : lot périmé refusé à l'entrée, commande sur le stock utilisable ----------
+select pg_temp.qui('gerant');
+do $$ declare b int; begin
+  insert into produits (designation, prix_achat, prix_vente) values ('ZZ RAPPORT', 10, 20) returning id into b;
+  insert into produits_programmes (produit_id, programme_id) values (b, pg_temp.v('vente'));
+  insert into t values ('rapport', b::text);
+  perform pg_temp.refus(format('select enregistrer_entree(%L::jsonb)', jsonb_build_object('produit_id', b, 'programme_id', pg_temp.v('vente'), 'quantite', 5, 'peremption', current_date - 1)), 'déjà périmé');
+  perform enregistrer_entree(jsonb_build_object('produit_id', b, 'programme_id', pg_temp.v('vente'), 'quantite', 10, 'peremption', current_date + 400));
+  perform ouvrir_caisse(0);
+  -- 9 vendus ce mois : CMM = 3 ; il reste 1 utilisable
+  perform enregistrer_vente(jsonb_build_object('programme_id', pg_temp.v('vente'), 'mode', 'especes',
+    'lignes', jsonb_build_array(jsonb_build_object('produit_id', b, 'quantite', 9))));
+  perform fermer_caisse(0);
+end $$;
+reset role;
+-- 5 unités trouvées sur l'étagère dans un lot déjà périmé (entrées avant leur péremption)
+insert into lots (produit_id, programme_id, numero, peremption, quantite) values (pg_temp.v('rapport'), pg_temp.v('vente'), 'VIEUX', current_date - 2, 5);
+insert into mouvements (produit_id, programme_id, lot_id, type, quantite)
+select pg_temp.v('rapport'), pg_temp.v('vente'), id, 'entree', 5 from lots where numero = 'VIEUX' and produit_id = pg_temp.v('rapport');
+set role authenticated;
+do $$ declare x record; begin
+  select * into x from rapport_mensuel(pg_temp.v('vente'), current_date) where produit_id = pg_temp.v('rapport');
+  assert x.stock_initial + x.recu - x.dispense - x.perimes = x.stock_disponible and x.stock_disponible = 6, 'formulaire inchangé : SD = 6 : ' || row_to_json(x)::text;
+  assert x.cmm = 3, 'CMM du mois en cours : 9 / 3 = 3 : ' || row_to_json(x)::text;
+  -- 2 × 3 − 1 utilisable = 5 (et non 2 × 3 − 6 = 0, qui laisserait le produit en rupture)
+  assert x.quantite_calculee = 5, 'commande calculée sur le stock utilisable : ' || row_to_json(x)::text;
+  -- Un mois passé : le calcul ne regarde pas les lots d'aujourd'hui
+  select * into x from rapport_mensuel(pg_temp.v('vente'), (current_date - interval '1 month')::date) where produit_id = pg_temp.v('rapport');
+  assert x.quantite_calculee = 0 and x.stock_disponible = 0, 'mois passé : rien : ' || row_to_json(x)::text;
 end $$;
 
 -- ---------- 14. Mot de passe temporaire ----------

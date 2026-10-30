@@ -1,6 +1,6 @@
 // Rapport « produits commandes recouvrables » du district, rempli depuis le stock Vente,
 // puis suivi des commandes envoyées (ce qui a été reçu, ce qui reste à recevoir).
-import { esc, fmt, fmtF, fmtDate, rpc, tout, isoMois, nomMois, imprimer, csv, telecharger, entier, erreur, toast, modal, confirmer } from '../util.js';
+import { esc, fmt, fmtF, fmtDate, fmtPeremption, q, rpc, tout, isoJour, isoMois, nomMois, imprimer, csv, telecharger, entier, erreur, toast, modal, confirmer } from '../util.js';
 
 const STATUTS = {
   envoyee: ['Envoyée', 'b-exp'],
@@ -21,15 +21,21 @@ export async function render(el, ctx) {
   let voirCalcul = true;
   let lignes = [];
   let commandes = [];
+  let perimesRayon = []; // mois en cours : lots déjà périmés encore sur l'étagère
+
+
 
   const qte = (r) => r.quantite_commandee;
   const montant = (r) => qte(r) * Number(r.prix_unitaire);
 
   async function charger() {
-    [lignes, commandes] = await Promise.all([
+    [lignes, commandes, perimesRayon] = await Promise.all([
       rpc(sb, 'rapport_mensuel', { p_programme: vente.id, p_debut: mois + '-01' }),
       tout(() => sb.from('commandes').select('*, commandes_lignes(produit_id, quantite, prix_unitaire, recu, produits(designation))')
-        .eq('programme_id', vente.id).order('created_at', { ascending: false }).order('id', { ascending: false }))
+        .eq('programme_id', vente.id).order('created_at', { ascending: false }).order('id', { ascending: false })),
+      mois === isoMois()
+        ? q(sb.from('lots').select('id, produit_id, numero, peremption, quantite').eq('programme_id', vente.id).gt('quantite', 0).lt('peremption', isoJour()).order('peremption'))
+        : Promise.resolve([])
     ]);
   }
 
@@ -103,6 +109,10 @@ export async function render(el, ctx) {
         </div></div>
       <div class="alert ${mois === isoMois() && jour > 20 && jour <= 25 ? 'alert-err' : 'alert-warn'}">Rappel : la dernière commande urgente se passe au plus tard le 25 du mois. ${aCmd.length} produit(s) à commander pour ${fmt(total)} F.
         ${mois === isoMois() ? ' Mois en cours : les chiffres sont arrêtés à aujourd’hui.' : ''}</div>
+      ${perimesRayon.length ? `<div class="signal-perimes"><div class="alert alert-err"><strong>${perimesRayon.length} lot(s) périmé(s) encore en rayon</strong> :
+        ${perimesRayon.slice(0, 8).map((l) => `${esc(lignes.find((r) => r.produit_id === l.produit_id)?.designation || 'produit ' + l.produit_id)} (${fmt(l.quantite)}${l.numero ? ', lot ' + esc(l.numero) : ''}, périmé ${fmtPeremption(l.peremption)})`).join(' ; ')}${perimesRayon.length > 8 ? '…' : ''}.
+        Retirez-les dans <a href="#/stock">Mon stock</a> (correction, motif « Périmé jeté ») avant d’imprimer : ils seront alors déclarés en « Quantité des périmés ».
+        La quantité à commander les exclut déjà, pour ne pas commander trop peu.</div></div>` : ''}
       <div class="inline">
         <button class="chip ${!seulementCommande ? 'on' : ''}" data-f="0">Tous les produits</button>
         <button class="chip ${seulementCommande ? 'on' : ''}" data-f="1">Seulement à commander</button>
@@ -113,7 +123,8 @@ export async function render(el, ctx) {
       <details class="small muted"><summary>Comment les colonnes sont calculées</summary>
         <p>A = stock à la fin du mois précédent. B = entrées du mois + stock retrouvé à l’inventaire. Dispensée = ventes du mois moins les ventes annulées.
         Périmés = lots périmés retirés + pertes (casse, manquants d’inventaire). SD = A + B − dispensée − périmés.
-        CMM = consommation moyenne des 3 derniers mois. Jours de rupture : seulement pour les produits déjà reçus au moins une fois.</p></details>
+        CMM = consommation moyenne des 3 derniers mois (jusqu’à aujourd’hui pour le mois en cours). Quantité commandée = 2 × CMM − stock utilisable
+        (le SD sans les lots déjà périmés encore en rayon). Jours de rupture : seulement pour les produits déjà reçus au moins une fois.</p></details>
       <div class="inline" style="justify-content:flex-end">
         ${dejaCeMois.length ? `<span class="small muted">Déjà enregistrée pour ce mois : ${dejaCeMois.map((c) => esc(c.numero)).join(', ')}</span>` : ''}
         <button class="btn btn-p" id="envoyer" ${aCmd.length ? '' : 'disabled'}>Enregistrer la commande envoyée au district</button>

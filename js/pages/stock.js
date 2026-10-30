@@ -16,23 +16,27 @@ export async function render(el, ctx) {
   const nom = (id) => { const o = origines.find((x) => x.id === id); return o ? (o.est_vente ? 'Vente' : o.sigle) : '?'; };
   const visibles = () => (vue === 'tout' ? origines : origines.filter((o) => o.id === vue));
 
-  // État d'un produit, calculé seulement sur les origines affichées
+  // État d'un produit, calculé seulement sur les origines affichées. « drap » garde TOUS ses signaux
+  // (un produit peut être à la fois en rupture et avoir un lot périmé) : les filtres s'en servent.
   function etatProduit(p) {
     const cles = visibles().map((o) => o.id).filter((id) => p.origines[id]);
-    if (!cles.length) return { cle: 'aucun', texte: 'Sans origine', badge: 'b-low' };
+    if (!cles.length) return { cle: 'aucun', texte: 'Sans origine', badge: 'b-low', drap: new Set(['aucun']) };
     // « Rupture » seulement pour un produit qui a déjà été en stock : sinon c'est un produit jamais saisi
     const ruptures = cles.filter((id) => p.origines[id].quantite <= 0 && p.origines[id].aEuDuStock);
     const jamais = cles.every((id) => p.origines[id].quantite <= 0 && !p.origines[id].aEuDuStock);
     const bas = cles.filter((id) => p.origines[id].quantite > 0 && p.origines[id].quantite < Math.max(p.stock_min, Math.ceil(p.origines[id].cmm)));
-    const perimes = cles.some((id) => p.origines[id].perimee > 0);
+    const perimes = cles.filter((id) => p.origines[id].perimee > 0);
     const bientot = cles.some((id) => { const j = joursAvant(p.origines[id].prochaine); return j !== null && j <= 90; });
     const qui = (ids) => (vue === 'tout' ? ' · ' + ids.map(nom).join(', ') : '');
-    if (ruptures.length) return { cle: 'rupture', texte: 'Rupture' + qui(ruptures), badge: 'b-out' };
-    if (bas.length) return { cle: 'bas', texte: 'Bas' + qui(bas), badge: 'b-low' };
-    if (perimes) return { cle: 'perime', texte: 'Lot périmé à retirer', badge: 'b-out' };
-    if (bientot) return { cle: 'bientot', texte: 'Périme bientôt', badge: 'b-exp' };
-    if (jamais) return { cle: 'jamais', texte: 'Jamais en stock', badge: 'b-neutre' };
-    return { cle: 'ok', texte: 'OK', badge: 'b-ok' };
+    const drap = new Set([...(ruptures.length ? ['rupture'] : []), ...(bas.length ? ['bas'] : []), ...(perimes.length ? ['perime'] : []),
+      ...(bientot ? ['bientot'] : []), ...(jamais ? ['jamais'] : [])]);
+    // Un lot périmé encore sur l'étagère passe avant tout : il risque d'être servi par erreur
+    if (perimes.length) return { cle: 'perime', texte: 'Périmé à retirer' + qui(perimes) + (ruptures.length ? ' · rupture' : bas.length ? ' · stock bas' : ''), badge: 'b-out', drap };
+    if (ruptures.length) return { cle: 'rupture', texte: 'Rupture' + qui(ruptures), badge: 'b-out', drap };
+    if (bas.length) return { cle: 'bas', texte: 'Bas' + qui(bas), badge: 'b-low', drap };
+    if (bientot) return { cle: 'bientot', texte: 'Périme bientôt', badge: 'b-exp', drap };
+    if (jamais) return { cle: 'jamais', texte: 'Jamais en stock', badge: 'b-neutre', drap };
+    return { cle: 'ok', texte: 'OK', badge: 'b-ok', drap };
   }
 
   // Chiffres d'un produit sur les origines affichées
@@ -53,9 +57,10 @@ export async function render(el, ctx) {
     const cols = visibles();
     const enVue = catalogue.filter((p) => p.actif && cols.some((o) => p.origines[o.id]));
     const avecEtat = enVue.map((p) => ({ p, e: etatProduit(p) }));
-    const compte = (k) => avecEtat.filter((x) => x.e.cle === k).length;
+    const garde = (x, k) => k === 'tout' || x.e.drap.has(k) || (k === 'bas' && x.e.drap.has('rupture'));
+    const compte = (k) => avecEtat.filter((x) => garde(x, k)).length;
     const liste = avecEtat
-      .filter((x) => filtre === 'tout' || x.e.cle === filtre || (filtre === 'bas' && x.e.cle === 'rupture'))
+      .filter((x) => garde(x, filtre))
       .filter((x) => correspond(x.p, recherche));
     const plusieurs = cols.length > 1;
     const valeurTotale = liste.reduce((s, { p }) => s + valeurDe(p), 0);
@@ -85,7 +90,7 @@ export async function render(el, ctx) {
       <div class="inline">
         <div style="flex:1 1 280px"><label class="sr" for="rech">Chercher</label><input class="in" id="rech" type="search" placeholder="Chercher un produit ou un code-barres" value="${esc(recherche)}"></div>
         <div class="inline" role="group" aria-label="Filtrer">
-          ${[['tout', 'Tout', avecEtat.length], ['bas', 'À commander', compte('bas') + compte('rupture')], ['rupture', 'Rupture', compte('rupture')], ['bientot', 'Périme bientôt', compte('bientot')], ['perime', 'Périmés', compte('perime')], ['jamais', 'Jamais en stock', compte('jamais')]]
+          ${[['tout', 'Tout', avecEtat.length], ['bas', 'À commander', compte('bas')], ['rupture', 'Rupture', compte('rupture')], ['bientot', 'Périme bientôt', compte('bientot')], ['perime', 'Périmés', compte('perime')], ['jamais', 'Jamais en stock', compte('jamais')]]
             .map(([k, l, n]) => `<button class="chip ${filtre === k ? 'on' : ''}" data-filtre="${k}">${l} <span class="num">${n}</span></button>`).join('')}
         </div>
       </div>
@@ -99,7 +104,8 @@ export async function render(el, ctx) {
             <td class="num">${fmtPeremption(c.prochaine)}</td><td><span class="badge ${e.badge}">${esc(e.texte)}</span></td></tr>`;
         }).join('') || `<tr><td colspan="${nbCols}" class="muted">Aucun produit${vue === 'tout' ? '' : ' rattaché à ' + esc(nom(vue))}.</td></tr>`}
           ${voirValeurs && liste.length ? `<tr><td colspan="${(plusieurs ? cols.length + 1 : 1) + (plusieurs ? 0 : 1) + 1}" style="text-align:right;font-weight:700">VALEUR DU STOCK AFFICHÉ${filtre === 'tout' && !recherche ? '' : ' (liste filtrée)'}</td><td class="num r" style="font-weight:700">${fmt(valeurTotale)}</td><td colspan="3"></td></tr>` : ''}</tbody>
-      </table></div></div>
+      </table></div>
+        ${voirValeurs ? '<div class="small muted" style="padding:8px 18px 12px">Valeur = stock utilisable × prix de l’origine (prix de vente, prix PHPSP, ou valeur du programme saisie dans la Base). Les lots périmés ne comptent pas.</div>' : ''}</div>
 
       <div class="row">
         ${montrerCommande ? `<section class="card card-pad stack" style="flex:1 1 380px">

@@ -41,7 +41,8 @@ a:hover { color: var(--vert-fonce); }
 h1 { margin: 0; font-size: 22px; }
 h2 { margin: 0; font-size: 18px; }
 h3 { margin: 0; font-size: 15px; }
-.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+/* Chiffres : la police de l'application, à chasse fixe (colonnes alignées), sans l'effet « machine à écrire » */
+.num { font-variant-numeric: tabular-nums lining-nums; font-feature-settings: 'tnum' 1, 'lnum' 1; }
 .muted { color: var(--gris); }
 .small { font-size: 13px; }
 .r { text-align: right; }
@@ -108,9 +109,9 @@ nav.menu .pastille {
   background: var(--rouge); color: #FFFFFF; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
 }
 nav.menu .court { display: none; }
-/* Écran moyen : on garde toute la place pour les onglets (noms courts sous 1320 px) */
-@media (max-width: 1400px) { nav.menu .version { display: none; } }
-@media (max-width: 1320px) { nav.menu .long { display: none; } nav.menu .court { display: inline; } }
+/* Écran d'ordinateur portable (1366, 1440 px…) : noms courts, pour que les 12 onglets tiennent sans défiler */
+@media (max-width: 1800px) { nav.menu .version { display: none; } }
+@media (max-width: 1700px) { nav.menu .long { display: none; } nav.menu .court { display: inline; } }
 
 main.page {
   padding: 20px;
@@ -135,7 +136,7 @@ main.page {
 .card-head { padding: 14px 18px; display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--bord); }
 .kpi { padding: 14px 18px; }
 .kpi .t { font-size: 14px; color: var(--gris); }
-.kpi .v { font-size: 28px; font-weight: 600; margin-top: 4px; font-family: var(--mono); }
+.kpi .v { font-size: 28px; font-weight: 700; margin-top: 4px; letter-spacing: -.01em; font-variant-numeric: tabular-nums lining-nums; font-feature-settings: 'tnum' 1; }
 .kpi .s { font-size: 13px; color: var(--gris); }
 
 /* ---------- Formulaires ---------- */
@@ -233,7 +234,7 @@ table.tbl { width: 100%; border-collapse: collapse; }
 .cart-line { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 18px; border-bottom: 1px solid #EDF1EF; }
 .qb { width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--bord-fort); background: #FFFFFF; font: inherit; font-size: 20px; font-weight: 600; cursor: pointer; }
 .cart-head-prog { background: var(--violet); color: #FFFFFF; border-radius: 14px 14px 0 0; }
-.total { font-size: 32px; font-weight: 600; font-family: var(--mono); }
+.total { font-size: 32px; font-weight: 700; letter-spacing: -.01em; font-variant-numeric: tabular-nums lining-nums; font-feature-settings: 'tnum' 1; }
 details.patient { border: 1px solid var(--bord); border-radius: 10px; padding: 0 14px; }
 details.patient summary { min-height: 48px; display: flex; align-items: center; cursor: pointer; font-weight: 600; }
 
@@ -299,6 +300,12 @@ details.patient summary { min-height: 48px; display: flex; align-items: center; 
 @media (max-width: 640px) {
   main.page { padding: 12px; }
   .grid-2 { grid-template-columns: minmax(0, 1fr); }
+  /* Chiffres clés deux par ligne : deux fois moins à faire défiler */
+  .grid-kpi { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .kpi { padding: 12px 14px; }
+  .kpi .t { font-size: 13px; }
+  .kpi .v { font-size: 22px; }
+  .kpi .s { font-size: 12px; }
   .topbar { padding: 8px 12px; }
   .brand-nom { font-size: 15px; }
   .user-box { width: 100%; justify-content: space-between; }

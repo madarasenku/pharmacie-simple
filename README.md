@@ -29,6 +29,15 @@ Adresse du site : https://madarasenku.github.io/pharmacie-simple/
 | Réglages | Infos de la pharmacie, droits par rôle, utilisateurs, journal des actions sensibles, sauvegarde complète. |
 | Erreurs (gérant) | Journal des erreurs : ce qui est incohérent dans les données (produit à vendre sans prix, vente à 0 F, lot périmé encore en stock, écart de caisse, crédit au-delà du plafond, sauvegarde ancienne…) **avec le nom du produit** et un bouton « Corriger » qui ouvre la bonne page, puis les erreurs apparues à l'écran des agents (message, page, qui, quand), à marquer « vues ». Une pastille rouge sur l'onglet compte ce qui reste à faire. |
 
+## Règles de pharmacie appliquées
+
+- **Le lot qui périme en premier sort en premier** ; un lot périmé n'est **jamais** servi (le serveur l'écarte).
+- Un lot **déjà périmé ne peut pas entrer** en stock ; une péremption à moins de 90 jours demande une confirmation.
+- Un lot périmé encore en rayon est **toujours signalé en rouge** (« Périmé à retirer ») dans Mon stock, au Comptoir,
+  dans le Journal des erreurs et dans le Rapport district, jusqu'à ce qu'il soit retiré (correction, motif « Périmé jeté »).
+- Rapport district : quantité à commander = 2 × CMM − stock **utilisable** ; la CMM du mois en cours couvre les 3 derniers
+  mois jusqu'à aujourd'hui. Les colonnes du formulaire officiel (A + B − C − D = SD) ne changent pas.
+
 ## Programmes recouvrables (PHPSP)
 
 Un programme **recouvrable** (type choisi dans **Base → Modifier le programme**) fournit des médicaments qui sont **vendus**
@@ -69,6 +78,7 @@ Les fichiers SQL sont dans `supabase/migrations/`, à appliquer dans l'ordre :
 | `008_journal_erreurs_anomalies.sql` | Journal des erreurs (`erreurs`, `signaler_erreur`, `marquer_erreurs_vues`) et contrôle des anomalies (`anomalies()`), réservés au gérant. |
 | `009_benefices_stock_valeurs.sql` | Bénéfices par jour (`benefices`) et stock valorisé par programme (`stock_valeurs`), pour le gérant et le responsable (droit « rapports »). |
 | `010_benefices_par_programme.sql` | Bénéfices d'un programme vendu au choix (`benefices(debut, fin, programme)` : Vente ou recouvrable comme PHPSP). |
+| `011_revue_pharmacien.sql` | Lot déjà périmé refusé à l'entrée par le serveur ; rapport district : CMM du mois en cours sur les 3 derniers mois jusqu'à aujourd'hui, quantité à commander calculée sur le stock utilisable (sans les lots périmés encore en rayon). |
 
 Sur la base de production, la 005 a été appliquée en deux temps (le 28/10/2026) : la première moitié depuis l'éditeur
 SQL, puis la fin avec `supabase/production/005_suite.sql` (même contenu, relançable sans risque). Pour une base neuve,
