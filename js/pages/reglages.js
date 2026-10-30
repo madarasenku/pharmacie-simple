@@ -1,17 +1,28 @@
 // Réglages (gérant) : pharmacie, droits du vendeur, utilisateurs, journal et sauvegarde.
-import { esc, fmtDateHeure, q, qMaj, erreur, toast, telecharger, isoJour, modal, confirmer, ROLES, DOMAINE_IDENTIFIANTS, MDP_REGLE, mdpValide } from '../util.js';
+import { esc, fmt, fmtDateHeure, q, qMaj, erreur, toast, telecharger, csv, isoJour, modal, confirmer, ROLES, DOMAINE_IDENTIFIANTS, MDP_REGLE, mdpValide } from '../util.js';
 
 const DROITS = [
   ['vendre', 'Vendre et encaisser'], ['entree', 'Entrée de stock'], ['credit', 'Vente à crédit'], ['programmes', 'Distribuer (programmes)'],
   ['corriger', 'Corriger le stock'], ['annuler', 'Annuler une vente'], ['prix', 'Changer les prix de vente'], ['rapports', 'Voir bénéfice et rapports'], ['base', 'Modifier la Base']
 ];
+// Journal : chaque action (libellé, couleur, groupe du filtre). Les actions récentes portent une phrase prête à lire
+// (details.texte, écrite par la base) ; les plus anciennes sont mises en forme ici.
 const ACTIONS = {
-  correction: ['Correction stock', 'b-low'], inventaire: ['Inventaire', 'b-low'], annulation: ['Annulation', 'b-out'], prix: ['Prix modifié', 'b-exp'],
-  ouverture_caisse: ['Ouverture caisse', 'b-ok'], fermeture_caisse: ['Fermeture caisse', 'b-ok'], remboursement: ['Remboursement crédit', 'b-ok'],
-  commande: ['Commande district', 'b-exp'], commande_annulee: ['Commande annulée', 'b-neutre'], commande_close: ['Commande close', 'b-neutre'],
-  produits_supprimes: ['Produits supprimés', 'b-out'], programmes_supprimes: ['Programmes supprimés', 'b-out'],
-  utilisateur_cree: ['Compte créé', 'b-prog'], mot_de_passe_change: ['Mot de passe changé', 'b-prog']
+  vente: ['Vente', 'b-ok', 'ventes'], distribution: ['Distribution', 'b-prog', 'ventes'], annulation: ['Annulation', 'b-out', 'ventes'],
+  entree: ['Entrée de stock', 'b-ok', 'stock'], correction: ['Correction stock', 'b-low', 'stock'], inventaire: ['Inventaire', 'b-low', 'stock'],
+  ouverture_caisse: ['Ouverture caisse', 'b-ok', 'caisse'], fermeture_caisse: ['Fermeture caisse', 'b-ok', 'caisse'], remboursement: ['Remboursement crédit', 'b-ok', 'caisse'],
+  client_cree: ['Client créé', 'b-neutre', 'caisse'], client_modifie: ['Client modifié', 'b-neutre', 'caisse'],
+  prix: ['Prix modifié', 'b-exp', 'base'], produit_cree: ['Produit créé', 'b-exp', 'base'], produit_modifie: ['Produit modifié', 'b-exp', 'base'],
+  produits_supprimes: ['Produits supprimés', 'b-out', 'base'], programme_cree: ['Programme créé', 'b-exp', 'base'], programme_modifie: ['Programme modifié', 'b-exp', 'base'],
+  programmes_supprimes: ['Programmes supprimés', 'b-out', 'base'], origine_ajoutee: ['Origine cochée', 'b-neutre', 'base'], origine_retiree: ['Origine décochée', 'b-neutre', 'base'],
+  commande: ['Commande district', 'b-exp', 'commandes'], commande_annulee: ['Commande annulée', 'b-neutre', 'commandes'], commande_close: ['Commande close', 'b-neutre', 'commandes'],
+  rapport_corrige: ['Rapport corrigé', 'b-low', 'commandes'],
+  utilisateur_cree: ['Compte créé', 'b-prog', 'comptes'], mot_de_passe_change: ['Mot de passe changé', 'b-prog', 'comptes'], compte_modifie: ['Compte modifié', 'b-prog', 'comptes'],
+  connexion: ['Connexion', 'b-neutre', 'comptes'], deconnexion: ['Déconnexion', 'b-neutre', 'comptes'],
+  reglage_modifie: ['Réglage modifié', 'b-neutre', 'reglages'], droits_modifies: ['Droits modifiés', 'b-low', 'reglages'], sauvegarde: ['Sauvegarde', 'b-ok', 'reglages']
 };
+const GROUPES = [['', 'Tout'], ['ventes', 'Ventes'], ['stock', 'Stock'], ['caisse', 'Caisse et crédits'], ['base', 'Base'], ['commandes', 'Commandes'], ['comptes', 'Comptes et connexions'], ['reglages', 'Réglages']];
+const actionsDu = (groupe) => Object.keys(ACTIONS).filter((a) => ACTIONS[a][2] === groupe);
 // Tables copiées dans la sauvegarde, avec un ordre stable pour la lecture page par page
 const TABLES = [
   ['parametres', 'cle'], ['programmes', 'id'], ['produits', 'id'], ['produits_programmes', 'produit_id,programme_id'], ['lots', 'id'],
@@ -30,18 +41,67 @@ async function appelUtilisateurs(sb, corps) {
   return data;
 }
 
+// Noms des produits, lots, clients et commandes cités par numéro dans les anciennes lignes du journal
+async function nomsDu(journal, sb) {
+  const ids = { produits: new Set(), lots: new Set(), clients: new Set(), commandes: new Set() };
+  for (const j of journal) {
+    const d = j.details || {};
+    if (d.texte) continue;
+    if (Number.isInteger(d.produit)) ids.produits.add(d.produit);
+    if (Number.isInteger(d.lot)) ids.lots.add(d.lot);
+    if (Number.isInteger(d.client)) ids.clients.add(d.client);
+    if (Number.isInteger(d.commande)) ids.commandes.add(d.commande);
+  }
+  const lire = async (table, champ, set) => (set.size ? new Map((await q(sb.from(table).select('id, ' + champ).in('id', [...set]))).map((x) => [x.id, x[champ]])) : new Map());
+  const [produits, lots, clients, commandes] = await Promise.all([
+    lire('produits', 'designation', ids.produits), lire('lots', 'numero', ids.lots), lire('clients', 'nom', ids.clients), lire('commandes', 'numero', ids.commandes)
+  ]);
+  return { produits, lots, clients, commandes };
+}
+
+function detailLisible(j, noms) {
+  const d = j.details || {};
+  if (d.texte) return d.texte;
+  const prod = (v) => (Number.isInteger(v) ? noms.produits.get(v) || 'produit n°' + v : v);
+  const F = (n) => fmt(n) + ' F';
+  switch (j.action) {
+    case 'correction': return [prod(d.produit), d.lot ? 'lot ' + (noms.lots.get(d.lot) || d.lot) : '', d.avant + ' → ' + d.apres, d.motif].filter(Boolean).join(' · ');
+    case 'annulation': return 'Vente ' + d.vente + ' · ' + F(d.total) + (d.motif ? ' · motif : ' + d.motif : '');
+    case 'ouverture_caisse': return 'Fond de caisse ' + F(d.fond);
+    case 'fermeture_caisse': return 'Espèces comptées ' + F(d.comptees) + (Number(d.ecart) ? ' · écart ' + (d.ecart > 0 ? '+' : '−') + F(Math.abs(d.ecart)) : ' · pas d’écart');
+    case 'remboursement': return (noms.clients.get(d.client) || 'client n°' + d.client) + ' · ' + F(d.montant);
+    case 'prix': return [prod(d.produit), d.origine, d.avant !== undefined ? F(d.avant) + ' → ' + F(d.apres) : d.prix_vente !== undefined ? F(d.prix_vente) : ''].filter(Boolean).join(' · ');
+    case 'inventaire': return [d.reference, (d.corrections ?? 0) + ' correction(s)', (d.lots_ajoutes ?? 0) + ' lot(s) ajouté(s)'].join(' · ');
+    case 'commande': case 'commande_annulee': case 'commande_close':
+      return 'Commande ' + (noms.commandes.get(d.commande) || 'n°' + d.commande) + (d.total !== undefined ? ' · ' + F(d.total) : '');
+    case 'produits_supprimes': case 'programmes_supprimes':
+      return [d.supprimes?.length ? 'supprimés : ' + d.supprimes.join(', ') : '', d.desactives?.length ? 'masqués : ' + d.desactives.join(', ') : ''].filter(Boolean).join(' · ') || '—';
+    case 'utilisateur_cree': return (d.identifiant || '') + (d.role ? ' · ' + (ROLES[d.role] || d.role) : '');
+    case 'mot_de_passe_change': return d.identifiant || '';
+    default: return Object.entries(d).map(([k, v]) => k + ' : ' + (typeof v === 'object' ? JSON.stringify(v) : v)).join(' · ');
+  }
+}
+
 export async function render(el, ctx) {
   const { sb } = ctx;
-  let filtre = '';
+  let filtre = ''; // groupe d'actions
+  let personne = '';
+  let jour = '';
   let limiteJournal = 200;
 
   async function dessiner() {
     let requeteJournal = sb.from('journal').select('*, profiles(nom)').order('created_at', { ascending: false }).order('id', { ascending: false }).limit(limiteJournal);
-    if (filtre) requeteJournal = requeteJournal.in('action', filtre.split(','));
+    if (filtre) requeteJournal = requeteJournal.in('action', actionsDu(filtre));
+    if (personne) requeteJournal = requeteJournal.eq('user_id', personne);
+    if (jour) {
+      const d = new Date(jour + 'T00:00:00');
+      requeteJournal = requeteJournal.gte('created_at', d.toISOString()).lt('created_at', new Date(d.getTime() + 86400000).toISOString());
+    }
     const [profils, journal] = await Promise.all([
       q(sb.from('profiles').select('*').order('created_at')),
       q(requeteJournal)
     ]);
+    const noms = await nomsDu(journal, sb);
     const ph = ctx.pharmacie;
     const liste = journal;
     const sauvegarde = ctx.derniereSauvegarde;
@@ -92,15 +152,24 @@ export async function render(el, ctx) {
       </section>
 
       <section class="card">
-        <div class="card-head"><div><h2>Journal des actions sensibles</h2><div class="small muted">Rien ne s'efface : corrections, annulations, prix, caisse.</div></div>
-          <div class="inline">${[['', 'Tout'], ['correction,inventaire', 'Stock'], ['annulation', 'Annulations'], ['prix,produits_supprimes,programmes_supprimes', 'Base et prix'], ['ouverture_caisse,fermeture_caisse,remboursement', 'Caisse'], ['commande,commande_annulee,commande_close', 'Commandes'], ['utilisateur_cree,mot_de_passe_change', 'Comptes']]
-            .map(([k, l]) => `<button class="chip ${filtre === k ? 'on' : ''}" data-j="${k}">${l}</button>`).join('')}</div></div>
-        <div class="table-box"><table class="tbl"><thead><tr><th>Date</th><th>Qui</th><th>Action</th><th>Détail</th></tr></thead>
+        <div class="card-head"><div><h2>Journal de toutes les actions</h2><div class="small muted">Chaque vente, distribution, entrée, correction, modification de la Base, caisse, crédit, commande, compte et connexion : qui, quand, quoi. Rien ne s’efface.</div></div>
+          <button class="btn btn-sm" id="csv-journal">Exporter Excel</button></div>
+        <div class="inline" style="padding:12px 18px 0">
+          ${GROUPES.map(([k, l]) => `<button class="chip ${filtre === k ? 'on' : ''}" data-j="${k}">${l}</button>`).join('')}
+        </div>
+        <div class="inline" style="padding:10px 18px 12px">
+          <label class="small muted" for="j-qui">Qui</label>
+          <select class="in" id="j-qui" style="width:auto"><option value="">Tout le monde</option>${profils.map((p) => `<option value="${p.id}" ${personne === p.id ? 'selected' : ''}>${esc(p.nom || p.identifiant || '')}</option>`).join('')}</select>
+          <label class="small muted" for="j-jour">Jour</label>
+          <input class="in" type="date" id="j-jour" value="${jour}" max="${isoJour()}" style="width:auto">
+          ${jour || personne ? '<button class="link small" id="j-effacer">Effacer les filtres</button>' : ''}
+        </div>
+        <div class="table-box defile"><table class="tbl"><thead><tr><th>Date</th><th>Qui</th><th>Action</th><th>Détail</th></tr></thead>
           <tbody>${liste.map((j) => {
             const a = ACTIONS[j.action] || [j.action, 'b-ok'];
-            return `<tr><td class="num small">${fmtDateHeure(j.created_at)}</td><td>${esc(j.profiles?.nom || '')}</td><td><span class="badge ${a[1]}">${esc(a[0])}</span></td>
-              <td class="small">${esc(Object.entries(j.details || {}).map(([k, v]) => k + ' : ' + v).join(' · '))}</td></tr>`;
-          }).join('') || '<tr><td colspan="4" class="muted">Rien pour l’instant.</td></tr>'}</tbody></table></div>
+            return `<tr><td class="num small" style="white-space:nowrap">${fmtDateHeure(j.created_at)}</td><td class="small">${esc(j.profiles?.nom || '')}</td><td><span class="badge ${a[1]}">${esc(a[0])}</span></td>
+              <td class="small" data-detail>${esc(detailLisible(j, noms))}</td></tr>`;
+          }).join('') || '<tr><td colspan="4" class="muted">Rien pour ces filtres.</td></tr>'}</tbody></table></div>
         ${journal.length >= limiteJournal ? '<div style="padding:10px 14px"><button class="btn btn-sm" id="plus-journal">Afficher plus</button></div>' : ''}
       </section>`;
 
@@ -186,6 +255,15 @@ export async function render(el, ctx) {
       } catch (e) { c.checked = !c.checked; erreur(e); }
     });
     el.querySelectorAll('[data-j]').forEach((b) => b.onclick = () => { filtre = b.dataset.j; limiteJournal = 200; dessiner().catch(erreur); });
+    el.querySelector('#j-qui').onchange = (e) => { personne = e.target.value; limiteJournal = 200; dessiner().catch(erreur); };
+    el.querySelector('#j-jour').onchange = (e) => { jour = e.target.value; limiteJournal = 200; dessiner().catch(erreur); };
+    const eff = el.querySelector('#j-effacer');
+    if (eff) eff.onclick = () => { jour = ''; personne = ''; dessiner().catch(erreur); };
+    el.querySelector('#csv-journal').onclick = () => {
+      const l = [['Date', 'Qui', 'Action', 'Détail']];
+      journal.forEach((j) => l.push([fmtDateHeure(j.created_at), j.profiles?.nom || '', (ACTIONS[j.action] || [j.action])[0], detailLisible(j, noms)]));
+      telecharger('journal-' + (jour || isoJour()) + '.csv', csv(l));
+    };
     const plus = el.querySelector('#plus-journal');
     if (plus) plus.onclick = () => { limiteJournal += 200; dessiner().catch(erreur); };
     el.querySelector('#sauvegarde').onclick = sauvegarder;

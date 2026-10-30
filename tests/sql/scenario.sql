@@ -270,7 +270,7 @@ do $$ begin
   assert (select details ->> 'apres' from journal where action = 'prix' order by id desc limit 1) = '125.00', 'changement de prix journalisé';
   perform enregistrer_entree(jsonb_build_object('produit_id', pg_temp.v('amox'), 'programme_id', pg_temp.v('vente'), 'quantite', 1, 'prix_vente', 130));
   assert (select count(*) from journal where action = 'prix') = 2, 'prix changé à l''entrée : une seule ligne de journal de plus';
-  assert (select (valeur ->> 'version')::int from parametres where cle = 'version_base') = 12, 'version de la base';
+  assert (select (valeur ->> 'version')::int from parametres where cle = 'version_base') = 13, 'version de la base';
 end $$;
 select pg_temp.qui('awa');
 do $$ declare n int; begin
@@ -512,6 +512,56 @@ end $$;
 -- ---------- 13d. Vocabulaire du district : l'origine Vente s'appelle REC ----------
 do $$ begin
   assert (select sigle = 'REC' and nom = 'Produits recouvrables' from programmes where est_vente), 'origine Vente renommée REC';
+end $$;
+
+-- ---------- 13e. Journal de toutes les actions, avec une phrase lisible ----------
+select pg_temp.qui('gerant');
+do $$ declare n int; b int := (select id from produits where designation = 'ZZ BENEF'); begin
+  assert exists (select 1 from journal where action = 'vente' and details ->> 'texte' like '% · REC · ZZ BENEF × 3 · 300 F en espèces'), 'vente notée avec numéro, articles, montant et paiement';
+  assert exists (select 1 from journal where action = 'distribution' and details ->> 'texte' like '% · PNLP · ZZ BENEF × 4'), 'distribution notée';
+  assert exists (select 1 from journal where action = 'entree' and details ->> 'texte' = 'ZZ BENEF · REC · +10'), 'entrée de stock notée';
+  assert exists (select 1 from journal where action = 'entree' and details ->> 'texte' like 'ZZ RAPPORT · REC · +10 · périme %'), 'entrée avec péremption';
+  assert exists (select 1 from journal where action = 'produit_cree' and details ->> 'texte' = 'ZZ BENEF · achat 40 F · vente 100 F'), 'produit créé noté';
+  assert exists (select 1 from journal where action = 'origine_ajoutee' and details ->> 'texte' = 'ZZ BENEF : coché PNLP'), 'origine cochée notée';
+  assert exists (select 1 from journal where action = 'rapport_corrige' and details ->> 'texte' like 'ZZ TEST AMOXICILLINE · % · quantité commandée 50'), 'correction du rapport notée';
+  assert (select user_id from journal where action = 'vente' and details ->> 'texte' like '% · ZZ BENEF × 3 %' limit 1) = (select id from profiles where identifiant = 'gerant'), 'la vente est au nom du vendeur';
+
+  -- Base, clients, réglages, droits, comptes
+  update produits set stock_min = 7 where id = b;
+  assert exists (select 1 from journal where action = 'produit_modifie' and details ->> 'texte' = 'ZZ BENEF · minimum 0 → 7'), 'produit modifié noté avec l’avant et l’après';
+  n := (select count(*) from journal where action = 'produit_modifie');
+  update produits set prix_vente = 110 where id = b;
+  assert (select count(*) from journal where action = 'produit_modifie') = n, 'un changement de prix seul n’est noté qu’une fois (journal des prix)';
+  assert exists (select 1 from journal where action = 'prix' and details ->> 'produit' = 'ZZ BENEF'), 'prix noté par son propre journal';
+  update produits set prix_vente = 100 where id = b;
+  insert into clients (nom, telephone, plafond) values ('ZZ CLIENT', '0700', 5000);
+  update clients set plafond = 8000 where nom = 'ZZ CLIENT';
+  assert exists (select 1 from journal where action = 'client_cree' and details ->> 'texte' = 'ZZ CLIENT · 0700 · plafond 5 000 F'), 'client créé noté';
+  assert exists (select 1 from journal where action = 'client_modifie' and details ->> 'texte' = 'ZZ CLIENT · plafond 5 000 F → 8 000 F'), 'client modifié noté';
+  update parametres set valeur = valeur || '{"prix": true}' where cle = 'droits_vendeur';
+  assert exists (select 1 from journal where action = 'droits_modifies' and details ->> 'texte' = 'Droits du rôle vendeur · changer les prix : autorisé'), 'droits notés';
+  update parametres set valeur = valeur || '{"prix": false}' where cle = 'droits_vendeur';
+  insert into parametres (cle, valeur) values ('derniere_sauvegarde', jsonb_build_object('date', now())) on conflict (cle) do update set valeur = excluded.valeur;
+  assert exists (select 1 from journal where action = 'sauvegarde'), 'sauvegarde notée';
+  update profiles set actif = false where identifiant = 'awa';
+  update profiles set actif = true where identifiant = 'awa';
+  assert exists (select 1 from journal where action = 'compte_modifie' and details ->> 'texte' like '% · compte désactivé'), 'compte désactivé noté';
+  n := (select count(*) from journal where action = 'version_base' or details ->> 'texte' like '%version_base%');
+  assert n = 0, 'la version de la base n’est pas une action';
+
+  -- Connexion : notée une fois, même en cas de double clic
+  perform journal_connexion('connexion');
+  perform journal_connexion('connexion');
+  assert (select count(*) from journal where action = 'connexion' and user_id = (select id from profiles where identifiant = 'gerant')) = 1, 'connexion notée une seule fois';
+  perform pg_temp.refus('select journal_connexion(''autre'')', 'Évènement inconnu');
+  -- Le journal reste réservé au gérant ; personne ne peut y écrire directement
+  perform pg_temp.refus('insert into journal (action) values (''faux'')', 'row-level security');
+end $$;
+select pg_temp.qui('awa');
+do $$ begin
+  assert (select count(*) from journal) = 0, 'un vendeur ne lit pas le journal';
+  perform journal_connexion('connexion');
+  perform pg_temp.refus('select journal_texte(''faux'', ''x'')', 'permission denied');
 end $$;
 
 -- ---------- 14. Mot de passe temporaire ----------
