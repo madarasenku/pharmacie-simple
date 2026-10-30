@@ -75,7 +75,7 @@ export async function render(el, ctx) {
               : `<th class="r" style="color:var(--violet)" title="Valeur d’une unité ${esc(g.nom)}, pour le stock et les points du programme : rien n’est vendu (vide = prix de vente normal)">Valeur ${esc(g.sigle)}</th>`)).join('')}<th class="r">Min.</th><th>Code-barres</th><th></th></tr></thead>
           <tbody>${liste.map((p) => `<tr style="${p.actif ? '' : 'opacity:.55'}">
             <td class="fixe col-case"><input type="checkbox" class="case" data-choix-prod="${p.id}" ${choixProduits.has(p.id) ? 'checked' : ''} aria-label="Choisir ${esc(p.designation)}"></td>
-            <td class="fixe2">${esc(p.designation)}${p.presentation ? `<br><span class="small muted">${esc(p.presentation)}</span>` : ''}</td>
+            <td class="fixe2">${esc(p.designation)}${p.presentation || p.code ? `<br><span class="small muted">${esc([p.presentation, p.code ? 'code ' + p.code : ''].filter(Boolean).join(' · '))}</span>` : ''}</td>
             ${progs.map((g) => `<td class="col-origine" style="text-align:center"><input type="checkbox" style="width:22px;height:22px;accent-color:${g.est_vente ? 'var(--vert)' : 'var(--violet)'}" data-lien="${p.id}:${g.id}" ${liens.has(p.id + ':' + g.id) ? 'checked' : ''} aria-label="${esc(p.designation)} : ${esc(g.nom)}"></td>`).join('')}
             <td class="r"><input class="in num r" style="width:90px" data-champ="prix_achat" data-id="${p.id}" value="${Number(p.prix_achat)}" aria-label="Prix d'achat ${esc(p.designation)}"></td>
             <td class="r"><input class="in num r" style="width:90px;${Number(p.prix_vente) ? '' : 'background:#FFF0CC'}" data-champ="prix_vente" data-id="${p.id}" value="${Number(p.prix_vente)}" aria-label="Prix de vente ${esc(p.designation)}"></td>
@@ -174,8 +174,8 @@ export async function render(el, ctx) {
     majSelection();
 
     el.querySelector('#export').onclick = () => {
-      const l = [['Désignation', 'Présentation', 'Code-barres', 'Prix achat', 'Prix vente', 'Minimum', ...ctx.programmes.map((g) => g.sigle), 'Actif']];
-      produits.forEach((p) => l.push([p.designation, p.presentation, p.code_barres, p.prix_achat, p.prix_vente, p.stock_min, ...ctx.programmes.map((g) => liens.has(p.id + ':' + g.id) ? 'oui' : ''), p.actif ? 'oui' : 'non']));
+      const l = [['Désignation', 'Présentation', 'Code district', 'Code-barres', 'Prix achat', 'Prix vente', 'Minimum', ...ctx.programmes.map((g) => g.sigle), 'Actif']];
+      produits.forEach((p) => l.push([p.designation, p.presentation, p.code || '', p.code_barres, p.prix_achat, p.prix_vente, p.stock_min, ...ctx.programmes.map((g) => liens.has(p.id + ':' + g.id) ? 'oui' : ''), p.actif ? 'oui' : 'non']));
       telecharger('produits.csv', csv(l));
     };
   }
@@ -259,7 +259,8 @@ export async function render(el, ctx) {
     const m = modal(p ? 'Modifier le produit' : 'Nouveau produit', `
       <div><label class="lbl" for="p-nom">Désignation</label><input class="in" id="p-nom" value="${esc(p?.designation || '')}"></div>
       <div class="grid-2">
-        <div><label class="lbl" for="p-pres">Présentation</label><input class="in" id="p-pres" value="${esc(p?.presentation || '')}"></div>
+        <div><label class="lbl" for="p-pres">Présentation (unité)</label><input class="in" id="p-pres" value="${esc(p?.presentation || '')}" placeholder="Plaquette, flacon…"></div>
+        <div><label class="lbl" for="p-district">Code (fiches du district)</label><input class="in num" id="p-district" value="${esc(p?.code || '')}" placeholder="Ex. 30015"></div>
         <div><label class="lbl" for="p-code">Code-barres</label><input class="in num" id="p-code" value="${esc(p?.code_barres || '')}" placeholder="Scannez ici"></div>
         <div><label class="lbl" for="p-pa">Prix d'achat (F)</label><input class="in num" id="p-pa" inputmode="decimal" value="${p ? Number(p.prix_achat) : 0}"></div>
         <div><label class="lbl" for="p-pv">Prix de vente (F)</label><input class="in num" id="p-pv" inputmode="decimal" value="${p ? Number(p.prix_vente) : 0}"></div>
@@ -273,6 +274,7 @@ export async function render(el, ctx) {
       const ligne = {
         designation: m.el.querySelector('#p-nom').value.trim(),
         presentation: m.el.querySelector('#p-pres').value.trim() || null,
+        code: m.el.querySelector('#p-district').value.trim() || null,
         code_barres: m.el.querySelector('#p-code').value.trim() || null,
         prix_achat: nombre(m.el.querySelector('#p-pa').value) || 0,
         prix_vente: nombre(m.el.querySelector('#p-pv').value) || 0,

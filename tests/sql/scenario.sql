@@ -270,7 +270,7 @@ do $$ begin
   assert (select details ->> 'apres' from journal where action = 'prix' order by id desc limit 1) = '125.00', 'changement de prix journalisé';
   perform enregistrer_entree(jsonb_build_object('produit_id', pg_temp.v('amox'), 'programme_id', pg_temp.v('vente'), 'quantite', 1, 'prix_vente', 130));
   assert (select count(*) from journal where action = 'prix') = 2, 'prix changé à l''entrée : une seule ligne de journal de plus';
-  assert (select (valeur ->> 'version')::int from parametres where cle = 'version_base') = 13, 'version de la base';
+  assert (select (valeur ->> 'version')::int from parametres where cle = 'version_base') = 14, 'version de la base';
 end $$;
 select pg_temp.qui('awa');
 do $$ declare n int; begin
@@ -562,6 +562,154 @@ do $$ begin
   assert (select count(*) from journal) = 0, 'un vendeur ne lit pas le journal';
   perform journal_connexion('connexion');
   perform pg_temp.refus('select journal_texte(''faux'', ''x'')', 'permission denied');
+end $$;
+
+-- ---------- 13f. Fiches PNLP du district (ESPC, IDE, ASC) et agents de santé communautaires ----------
+select pg_temp.qui('gerant');
+do $$ begin
+  assert (select count(*) from fiches_lignes) = 30, '30 lignes sur les fiches';
+  assert (select count(*) from fiches_lignes where sur_espc) = 30 and (select count(*) from fiches_lignes where sur_ide) = 24
+     and (select count(*) from fiches_lignes where sur_asc) = 16, 'ESPC 30 lignes, IDE 24, ASC 16';
+  -- Produits déjà au PNLP reliés à leur ligne d'après leur nom
+  assert (select p.designation from fiches_lignes f join produits p on p.id = f.produit_id where f.cle = 'ASAQ25') = 'ACT nourrisson (2-11 mois)', 'AS/AQ 2-11 mois relié';
+  assert (select p.designation from fiches_lignes f join produits p on p.id = f.produit_id where f.cle = 'ASAQ50') = 'ACT enfant (1-5 ans)', 'AS/AQ 1-5 ans relié';
+  assert (select p.designation from fiches_lignes f join produits p on p.id = f.produit_id where f.cle = 'TDR') = 'TDR paludisme', 'TDR relié';
+  assert (select p.designation from fiches_lignes f join produits p on p.id = f.produit_id where f.cle = 'SP500') = 'SP (TPI femme enceinte)', 'SP 500/25 relié';
+  assert (select produit_id is null from fiches_lignes where cle = 'MILDAD'), 'ligne sans produit au départ';
+end $$;
+do $$ declare b int; a1 int; a2 int; begin
+  insert into produits (designation, presentation) values ('ZZ MILDA', 'Moustiquaire') returning id into b;
+  insert into produits_programmes (produit_id, programme_id) values (b, pg_temp.v('pnlp'));
+  perform lier_ligne_fiche((select id from fiches_lignes where cle = 'MILDAD'), b, pg_temp.v('pnlp'));
+  perform pg_temp.refus(format('select lier_ligne_fiche(%s, %s, %s)', (select id from fiches_lignes where cle = 'MILDAIG'), b, pg_temp.v('pnlp')), 'déjà sur une autre ligne');
+  perform pg_temp.refus(format('select lier_ligne_fiche(%s, %s, %s)', (select id from fiches_lignes where cle = 'MILDAIG'), b, pg_temp.v('vente')), 'pas rattaché');
+  a1 := enregistrer_asc('{"nom": "  aya kouassi ", "localite": "Ahouakro", "telephone": "0701"}');
+  a2 := enregistrer_asc('{"nom": "Bamba Ali"}');
+  assert (select nom from agents_asc where id = a1) = 'AYA KOUASSI', 'nom de l''ASC en majuscules';
+  perform pg_temp.refus('select enregistrer_asc(''{"nom": " "}'')', 'obligatoire');
+  insert into t values ('milda', b::text), ('asc1', a1::text), ('asc2', a2::text);
+end $$;
+-- Historique des deux mois passés (écrit directement, avec des dates passées)
+reset role;
+do $$ declare b int := pg_temp.v('milda'); g int := pg_temp.v('pnlp'); m0 timestamptz := date_trunc('month', now()); l int; begin
+  insert into lots (produit_id, programme_id, numero, peremption, quantite) values (b, g, 'ZM1', current_date + 400, 15) returning id into l;
+  insert into mouvements (produit_id, programme_id, lot_id, type, quantite, created_at, asc_id) values
+    (b, g, l, 'entree', 60, m0 - interval '2 months' + interval '1 day', null),
+    (b, g, l, 'distribution', -10, m0 - interval '2 months' + interval '5 days', null),
+    (b, g, l, 'distribution', -20, m0 - interval '1 month' + interval '3 days', null),
+    (b, g, l, 'distribution', -15, m0 - interval '1 month' + interval '4 days', pg_temp.v('asc1'));
+end $$;
+set role authenticated;
+select pg_temp.qui('gerant');
+do $$ declare b int := pg_temp.v('milda'); g int := pg_temp.v('pnlp'); r jsonb; begin
+  -- Ce mois : 10 reçus du district, 6 donnés aux patients, 9 remis à AYA, 2 périmés retirés
+  perform enregistrer_entree(jsonb_build_object('produit_id', b, 'programme_id', g, 'quantite', 10, 'numero_lot', 'ZM1', 'peremption', (current_date + 400)::text));
+  perform enregistrer_vente(jsonb_build_object('programme_id', g, 'categorie', 'Autre', 'lignes', jsonb_build_array(jsonb_build_object('produit_id', b, 'quantite', 6))));
+  r := remettre_asc(jsonb_build_object('asc_id', pg_temp.v('asc1'), 'lignes', jsonb_build_array(jsonb_build_object('produit_id', b, 'programme_id', g, 'quantite', 9))));
+  assert (r ->> 'unites')::int = 9, 'remise à l''ASC : 9 unités';
+  perform corriger_stock((select id from lots where produit_id = b and numero = 'ZM1'), 8, 'Périmés retirés');
+  assert (select quantite from v_stock where produit_id = b and programme_id = g) = 8, 'stock du centre : 8';
+  assert exists (select 1 from mouvements where produit_id = b and asc_id = pg_temp.v('asc1') and type = 'distribution' and quantite = -9 and reference = 'ASC AYA KOUASSI'), 'remise notée en sortie, au nom de l''ASC';
+  assert exists (select 1 from journal where action = 'remise_asc' and details ->> 'texte' = 'ASC AYA KOUASSI (Ahouakro) · PNLP · ZZ MILDA × 9'), 'remise notée au journal';
+  assert not exists (select 1 from ventes v join ventes_lignes vl on vl.vente_id = v.id where vl.produit_id = b and v.patient_nom is null and v.categorie is null), 'une remise n''est pas une vente';
+  perform pg_temp.refus(format('select remettre_asc(%L::jsonb)', jsonb_build_object('asc_id', pg_temp.v('asc1'), 'lignes', jsonb_build_array(jsonb_build_object('produit_id', b, 'programme_id', g, 'quantite', 1000)))), 'Stock insuffisant');
+  perform pg_temp.refus(format('select remettre_asc(%L::jsonb)', jsonb_build_object('asc_id', pg_temp.v('asc1'), 'lignes', '[]'::jsonb)), 'Rien à remettre');
+  assert (select quantite from v_stock where produit_id = b and programme_id = g) = 8, 'remise refusée : stock intact';
+end $$;
+-- Rapports des ASC : AYA le mois passé (10 dispensés) et ce mois ; BAMBA ce mois, avec son stock de départ
+select pg_temp.qui('awa');
+do $$ declare k text := 'l' || (select id from fiches_lignes where cle = 'MILDAD'); begin
+  perform saisir_asc(jsonb_build_object('asc_id', pg_temp.v('asc1'), 'mois', (current_date - interval '1 month')::date, 'lignes', jsonb_build_object(k, jsonb_build_object('c', 10))));
+  perform saisir_asc(jsonb_build_object('asc_id', pg_temp.v('asc1'), 'mois', current_date, 'tdr_realises', 12, 'tdr_positifs', 4,
+    'lignes', jsonb_build_object(k, jsonb_build_object('c', '8', 'd', 1, 'f', 2))));
+  perform saisir_asc(jsonb_build_object('asc_id', pg_temp.v('asc2'), 'mois', current_date, 'tdr_realises', 3, 'tdr_positifs', 0,
+    'lignes', jsonb_build_object(k, jsonb_build_object('si', 20, 'c', 3))));
+  -- AYA avait 5 + 9 = 14 : elle ne peut pas en avoir dispensé 50
+  perform pg_temp.refus(format('select saisir_asc(%L::jsonb)', jsonb_build_object('asc_id', pg_temp.v('asc1'), 'mois', current_date, 'lignes', jsonb_build_object(k, jsonb_build_object('c', 50)))), 'Stock de l''ASC négatif');
+  perform pg_temp.refus(format('select saisir_asc(%L::jsonb)', jsonb_build_object('asc_id', pg_temp.v('asc1'), 'mois', current_date, 'tdr_realises', 2, 'tdr_positifs', 5)), 'positifs');
+  perform pg_temp.refus(format('select saisir_asc(%L::jsonb)', jsonb_build_object('asc_id', pg_temp.v('asc1'), 'mois', current_date, 'lignes', jsonb_build_object(k, jsonb_build_object('c', 'beaucoup')))), 'nombre entier');
+  perform pg_temp.refus(format('select saisir_asc(%L::jsonb)', jsonb_build_object('asc_id', pg_temp.v('asc1'), 'mois', current_date + 40)), 'Mois invalide');
+  -- Un agent de santé ne relie pas les lignes de la fiche (droit Base)
+  perform pg_temp.refus(format('select lier_ligne_fiche(%s, null, null)', (select id from fiches_lignes where cle = 'MILDAD')), 'non autorisée (base)');
+end $$;
+do $$ declare x jsonb; l jsonb; k text := 'l' || (select id from fiches_lignes where cle = 'MILDAD'); begin
+  -- ESPC : A 15 · B 10 · (ASC 9) · C 6 + 9 = 15 · D −2 · E 8 · M-1 20 + 15 = 35 · M-2 10 · CMM 20 · MSD 0,4 · K = 20 × 2 − 8 = 32
+  x := fiche_pnlp('ESPC', current_date);
+  select e into l from jsonb_array_elements(x -> 'lignes') e where e ->> 'k' = k;
+  assert (l ->> 'a', l ->> 'b', l ->> 'asc', l ->> 'c', l ->> 'd', l ->> 'e', l ->> 'm1', l ->> 'm2') = ('15', '10', '9', '15', '-2', '8', '35', '10'),
+    'ESPC : colonnes A à H : ' || l::text;
+  assert (l ->> 'cmm')::numeric = 20 and (l ->> 'msd')::numeric = 0.4 and l ->> 'niveau' = 'urgent' and (l ->> 'q')::int = 32 and (l ->> 'qcalc')::int = 32, 'ESPC : CMM, MSD, commande urgente, K : ' || l::text;
+  assert (x ->> 'urgent')::boolean and (x -> 'niveaux' ->> 'max')::numeric = 2, 'ESPC : fiche urgente, niveau maximum 2';
+  assert l ->> 'code' is null and l ->> 'unite' = 'MOUSTIQUAIRE' and l ->> 'produit' = 'ZZ MILDA', 'ESPC : unité de la fiche, produit de l''application';
+  assert (select bool_and((e ->> 'a')::int + (e ->> 'b')::int - (e ->> 'c')::int + (e ->> 'd')::int = (e ->> 'e')::int) from jsonb_array_elements(x -> 'lignes') e), 'ESPC : E = A + B − C ± D sur toutes les lignes';
+  assert jsonb_array_length(x -> 'lignes') = 30 + (select count(*) from produits p join produits_programmes pp on pp.produit_id = p.id and pp.programme_id = pg_temp.v('pnlp')
+    where p.actif and not exists (select 1 from fiches_lignes f where f.produit_id = p.id and f.programme_id = pg_temp.v('pnlp'))), 'ESPC : 30 lignes + les autres produits du PNLP en bas';
+  assert exists (select 1 from jsonb_array_elements(x -> 'lignes') e where e ->> 'designation' = 'ACT adulte' and e ->> 'k' like 'p%'), 'produit PNLP hors fiche ajouté en bas';
+  assert (select count(*) from jsonb_array_elements(x -> 'lignes') e where e ->> 'produit_id' is null and e ->> 'q' is not null) = 0, 'ligne sans produit : pas de quantité';
+
+  -- IDE : C = 9 remis aux ASC · D = 6 aux patients · F = 8 · J = (6 + 20 + 10) / 3 = 12 · K = 0,7 · L = Σ ASC = 4 + 0
+  x := fiche_pnlp('IDE', current_date);
+  select e into l from jsonb_array_elements(x -> 'lignes') e where e ->> 'k' = k;
+  assert (l ->> 'asc', l ->> 'c', l ->> 'd', l ->> 'e', l ->> 'm1', l ->> 'm2', l ->> 'cmm', l ->> 'msd', l ->> 'niveau', l ->> 'q') = ('9', '6', '-2', '8', '20', '10', '12.0', '0.7', 'bas', '4'),
+    'IDE : colonnes et L = somme des ASC : ' || l::text;
+  assert jsonb_array_length(x -> 'lignes') = 24 + (select count(*) from produits p join produits_programmes pp on pp.produit_id = p.id and pp.programme_id = pg_temp.v('pnlp')
+    where p.actif and not exists (select 1 from fiches_lignes f where f.produit_id = p.id and f.programme_id = pg_temp.v('pnlp'))), 'IDE : 24 lignes + autres produits';
+  assert (select e ->> 'q' from jsonb_array_elements(x -> 'lignes') e where e ->> 'designation' like 'GIEMSA%') is null, 'IDE : ligne absente de la fiche ASC, pas de quantité pour les ASC';
+
+  -- ASC d'AYA : A 5 · B 9 · C 8 · D 1 · E 5 · F 2 · M-1 10 · CMM 6 · MSD 0,8 · K = 6 × 1,5 − 5 = 4
+  x := fiche_pnlp('ASC', current_date, pg_temp.v('asc1'));
+  select e into l from jsonb_array_elements(x -> 'lignes') e where e ->> 'k' = k;
+  assert (l ->> 'a', l ->> 'b', l ->> 'c', l ->> 'd', l ->> 'e', l ->> 'f', l ->> 'm1', l ->> 'm2', l ->> 'cmm', l ->> 'q') = ('5', '9', '8', '1', '5', '2', '10', '0', '6.0', '4'),
+    'ASC d''AYA : ' || l::text;
+  assert (x -> 'entete' ->> 'tdr_realises')::int = 12 and x -> 'asc' ->> 'nom' = 'AYA KOUASSI', 'ASC d''AYA : ses TDR';
+  assert (x -> 'niveaux' ->> 'max')::numeric = 1.5 and jsonb_array_length(x -> 'lignes') = 16, 'fiche ASC : maximum 1,5 et 16 lignes';
+  -- BAMBA repart de son stock saisi : 20 − 3 = 17
+  select e into l from jsonb_array_elements(fiche_pnlp('ASC', current_date, pg_temp.v('asc2')) -> 'lignes') e where e ->> 'k' = k;
+  assert (l ->> 'a', l ->> 'e', l ->> 'si', l ->> 'q') = ('20', '17', '20', '0'), 'stock initial saisi : ' || l::text;
+  -- Fiche ASC de tous les ASC : sommes ; TDR = somme des ASC ; K = 7 × 1,5 − 22 → 0
+  x := fiche_pnlp('ASC', current_date);
+  select e into l from jsonb_array_elements(x -> 'lignes') e where e ->> 'k' = k;
+  assert (l ->> 'a', l ->> 'b', l ->> 'c', l ->> 'd', l ->> 'e', l ->> 'f', l ->> 'cmm', l ->> 'q') = ('25', '9', '11', '1', '22', '2', '7.0', '0'), 'ASC consolidée : ' || l::text;
+  assert (x ->> 'nombre_asc')::int = 2 and (x -> 'entete' ->> 'tdr_realises')::int = 15 and (x -> 'entete' ->> 'tdr_positifs')::int = 4, 'nombre d''ASC et TDR additionnés : ' || (x -> 'entete')::text;
+
+  -- La quantité allouée se corrige à la main ; TDR et gouttes épaisses gardés pour le mois
+  perform enregistrer_fiche(jsonb_build_object('fiche', 'ESPC', 'mois', current_date, 'tdr_realises', 30, 'tdr_positifs', 8, 'ge_realisees', '5', 'ge_positives', 1,
+    'commentaire', 'Rupture de MILDA au village', 'lignes', jsonb_build_object(k, jsonb_build_object('q', 40, 'com', 'Campagne'))));
+  x := fiche_pnlp('ESPC', current_date);
+  select e into l from jsonb_array_elements(x -> 'lignes') e where e ->> 'k' = k;
+  assert (l ->> 'q')::int = 40 and (l ->> 'qcalc')::int = 32 and (l ->> 'corrigee')::boolean and l ->> 'commentaire' = 'Campagne', 'quantité corrigée gardée : ' || l::text;
+  assert (x -> 'entete' ->> 'tdr_realises', x -> 'entete' ->> 'ge_realisees', x -> 'entete' ->> 'commentaire', left(x -> 'entete' ->> 'maj_par', 3)) = ('30', '5', 'Rupture de MILDA au village', 'AWA'), 'en-tête gardé : ' || (x -> 'entete')::text;
+  perform pg_temp.refus(format('select enregistrer_fiche(%L::jsonb)', jsonb_build_object('fiche', 'ESPC', 'mois', current_date, 'tdr_realises', 3, 'tdr_positifs', 4)), 'positifs');
+  perform pg_temp.refus('select fiche_pnlp(''XYZ'', current_date)', 'Fiche inconnue');
+end $$;
+select pg_temp.qui('gerant');
+do $$ declare n int; begin
+  assert exists (select 1 from journal where action = 'saisie_asc' and details ->> 'texte' like 'ASC AYA KOUASSI · % ' || extract(year from current_date) || ' · 1 produit(s) saisi(s) · TDR 12 (4 positifs)'), 'saisie ASC notée';
+  assert exists (select 1 from journal where action = 'fiche_pnlp' and details ->> 'texte' like 'Fiche ESPC · % ' || extract(year from current_date) || ' · 1 quantité(s) corrigée(s) · TDR 30 (8 positifs) · GE 5 (1 positives)'), 'fiche notée';
+  assert exists (select 1 from journal where action = 'asc_cree' and details ->> 'texte' = 'ASC AYA KOUASSI · Ahouakro · 0701'), 'ASC créé noté';
+  assert exists (select 1 from journal where action = 'fiche_ligne_liee' and details ->> 'texte' like 'Fiche · « MILDA Dual AI BALLE/50 » → ZZ MILDA (PNLP)'), 'ligne reliée notée';
+  -- Code du district dans la Base, noté au journal
+  update produits set code = '51200' where id = pg_temp.v('milda');
+  assert exists (select 1 from journal where action = 'produit_modifie' and details ->> 'texte' = 'ZZ MILDA · code 51200'), 'code noté';
+  assert (select e ->> 'code' from jsonb_array_elements(fiche_pnlp('ESPC', current_date) -> 'lignes') e where e ->> 'produit' = 'ZZ MILDA') = '51200', 'code affiché sur la fiche';
+  -- Créer les produits qui manquent : seulement les lignes demandées, puis rien en double
+  n := creer_produits_fiche(array[(select id from fiches_lignes where cle = 'GIEMSA')]);
+  assert n = 1 and (select p.designation || '|' || p.presentation from fiches_lignes f join produits p on p.id = f.produit_id where f.cle = 'GIEMSA') = 'GIEMSA SOLUTION FL/500ML|Flacon', 'produit GIEMSA créé et relié';
+  assert exists (select 1 from produits_programmes pp join fiches_lignes f on f.produit_id = pp.produit_id where f.cle = 'GIEMSA' and pp.programme_id = pg_temp.v('pnlp')), 'produit créé au PNLP';
+  assert creer_produits_fiche(array[(select id from fiches_lignes where cle = 'GIEMSA')]) = 0, 'déjà relié : rien de créé';
+  -- Désactiver un ASC : il sort des fiches consolidées et ne reçoit plus rien
+  perform enregistrer_asc(jsonb_build_object('id', pg_temp.v('asc2'), 'nom', 'BAMBA ALI', 'actif', false));
+  assert (fiche_pnlp('ASC', current_date) ->> 'nombre_asc')::int = 1, 'ASC désactivé : plus compté';
+  perform pg_temp.refus(format('select remettre_asc(%L::jsonb)', jsonb_build_object('asc_id', pg_temp.v('asc2'), 'lignes', jsonb_build_array(jsonb_build_object('produit_id', pg_temp.v('milda'), 'programme_id', pg_temp.v('pnlp'), 'quantite', 1)))), 'ASC actif');
+  assert exists (select 1 from journal where action = 'asc_modifie' and details ->> 'texte' = 'ASC BAMBA ALI · désactivé'), 'ASC désactivé noté';
+  -- Personne n'écrit dans ces tables sans passer par les fonctions
+  perform pg_temp.refus('insert into agents_asc (nom) values (''X'')', 'row-level security');
+  perform pg_temp.refus('insert into fiches_mois (fiche, mois) values (''ESPC'', date_trunc(''month'', now()))', 'row-level security');
+end $$;
+select pg_temp.qui('intrus');
+do $$ begin
+  perform pg_temp.refus('select fiche_pnlp(''ESPC'', current_date)', 'non autorisée');
+  assert (select count(*) from agents_asc) = 0, 'un compte inactif ne voit pas les ASC';
 end $$;
 
 -- ---------- 14. Mot de passe temporaire ----------

@@ -1,7 +1,7 @@
 # Pharmacie Simple — dossier de passation (contexte pour une IA ou un développeur)
 
 > À lire EN ENTIER avant de modifier le code. Il complète le README (qui s'adresse à l'utilisatrice).
-> Version applicative : **1.10.0** · cache du service worker : **pharmacie-simple-v12** · base attendue : **13**
+> Version applicative : **1.11.0** · cache du service worker : **pharmacie-simple-v13** · base attendue : **14**
 
 ## 1. Vue d'ensemble
 
@@ -65,7 +65,8 @@
   origine qui a encore du stock (déclencheur `produits_programmes_detachement`).
 - `lots` (produit, origine, numéro, péremption, quantité) : **le stock est la somme des lots**. Sortie FEFO : le lot
   non périmé qui périme en premier part d'abord (`enregistrer_vente`).
-- `mouvements` : historique signé (`entree`, `vente`, `distribution`, `correction`, `perime`, `annulation`).
+- `mouvements` : historique signé (`entree`, `vente`, `distribution`, `correction`, `perime`, `annulation`) ; `asc_id`
+  renseigné = remise à un agent de santé communautaire (voir Fiches PNLP).
   **Toute variation de lot DOIT créer un mouvement**, sinon le rapport district devient faux.
 - `ventes` / `ventes_lignes` (une ligne par lot touché), `caisses`, `clients`, `credits_paiements`, vue `v_dettes`.
 - `commandes` / `commandes_lignes` (`quantite`, `recu`) : statut `envoyee` → `partielle` → `soldee` (ou `annulee`) ;
@@ -95,6 +96,23 @@ A (stock initial) + B (entrées + corrections positives) − C (ventes/distribut
 corrections négatives) = SD, **toujours** (vérifié par `tests/sql/scenario.sql` pour chaque produit et chaque origine).
 Quantité à commander = `max(0, ceil(2 × CMM − SD))`, remplaçable par `rapports_corrections`. Jours de rupture : seulement
 pour un produit qui a déjà eu du stock.
+
+### Fiches PNLP du district (`fiche_pnlp`, migration 014)
+Les trois « RAPPORT-COMMANDE MENSUEL » de la Nouvelle PSP. `fiches_lignes` = les 30 lignes du papier (`cle`, `ordre`,
+désignation et unité officielles, `sur_espc` / `sur_ide` / `sur_asc`), chacune reliée à UN couple (produit, origine) — un
+produit d'une autre origine (SRO de REC…) peut y figurer. Le code affiché vient de `produits.code` (Base). Les autres produits
+actifs du PNLP non reliés s'ajoutent en bas des fiches ESPC et IDE (clé `p<id>`, comme les lignes vides du papier).
+- Remise à un ASC (`remettre_asc`) = mouvement `distribution` avec `asc_id` (FEFO, sans vente : pas de bénéficiaire).
+- ESPC : C = dispensé + remis aux ASC (colonne grise « dont ASC ») ; E = A + B − C ± D ; I = (C + G + H) / 3 ; J = E / I ; K = I × 2 − E.
+- IDE : C = remis aux ASC ; D = dispensé aux patients ; F = A + B − C − D ± E ; J = (D + H + I) / 3 (patients seulement) ;
+  L = Σ des K de chaque ASC actif (fiche ASC, max 1,5).
+- ASC : stock de chaque ASC reconstitué par `asc_calcul(mois, asc)` (interne) : B = remises du mois ; C, D, F saisis
+  (`asc_mois.lignes = {"l<id>": {si, c, d, f}}`) ; A = E du mois précédent, ou `si` s'il est saisi (le calcul repart de là) ;
+  K = I × 1,5 − E. Fiche consolidée = sommes (F = max), K = formule sur les sommes. `saisir_asc` refuse un stock d'ASC négatif.
+- Niveaux : `urgent` (MSD < 0,5), `bas` (< 1), `sur` (> max). Corrections et saisies à la main : `fiches_mois`
+  (`lignes = {"l<id>": {q, com}}`, TDR, gouttes épaisses, commentaire). Le site n'envoie `q` que s'il diffère du calcul.
+- Écran : `js/pages/fiches.js` (`renderFiche`, `renderAsc`), appelé par programmes.js quand le programme est le PNLP
+  (`estPnlp` : code ou sigle `PNLP`). Mots du papier conservés tels quels (« Quantités allouée par le DS »…).
 
 ### Inventaire (`valider_inventaire`)
 Le site envoie, pour chaque lot compté, `reel` et `attendu` (quantité affichée sur la feuille). Si un lot a bougé
