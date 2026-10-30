@@ -16,7 +16,9 @@ const ACTIONS = {
   produits_supprimes: ['Produits supprimés', 'b-out', 'base'], programme_cree: ['Programme créé', 'b-exp', 'base'], programme_modifie: ['Programme modifié', 'b-exp', 'base'],
   programmes_supprimes: ['Programmes supprimés', 'b-out', 'base'], origine_ajoutee: ['Origine cochée', 'b-neutre', 'base'], origine_retiree: ['Origine décochée', 'b-neutre', 'base'],
   commande: ['Commande district', 'b-exp', 'commandes'], commande_annulee: ['Commande annulée', 'b-neutre', 'commandes'], commande_close: ['Commande close', 'b-neutre', 'commandes'],
-  rapport_corrige: ['Rapport corrigé', 'b-low', 'commandes'],
+  rapport_corrige: ['Rapport corrigé', 'b-low', 'commandes'], fiche_pnlp: ['Fiche PNLP', 'b-prog', 'commandes'], saisie_asc: ['Rapport d’un ASC', 'b-prog', 'commandes'],
+  remise_asc: ['Remise à un ASC', 'b-prog', 'stock'], asc_cree: ['ASC ajouté', 'b-neutre', 'base'], asc_modifie: ['ASC modifié', 'b-neutre', 'base'],
+  fiche_ligne_liee: ['Ligne de fiche reliée', 'b-neutre', 'base'],
   utilisateur_cree: ['Compte créé', 'b-prog', 'comptes'], mot_de_passe_change: ['Mot de passe changé', 'b-prog', 'comptes'], compte_modifie: ['Compte modifié', 'b-prog', 'comptes'],
   connexion: ['Connexion', 'b-neutre', 'comptes'], deconnexion: ['Déconnexion', 'b-neutre', 'comptes'],
   reglage_modifie: ['Réglage modifié', 'b-neutre', 'reglages'], droits_modifies: ['Droits modifiés', 'b-low', 'reglages'], sauvegarde: ['Sauvegarde', 'b-ok', 'reglages']
@@ -27,7 +29,8 @@ const actionsDu = (groupe) => Object.keys(ACTIONS).filter((a) => ACTIONS[a][2] =
 const TABLES = [
   ['parametres', 'cle'], ['programmes', 'id'], ['produits', 'id'], ['produits_programmes', 'produit_id,programme_id'], ['lots', 'id'],
   ['clients', 'id'], ['caisses', 'id'], ['ventes', 'id'], ['ventes_lignes', 'id'], ['mouvements', 'id'], ['credits_paiements', 'id'],
-  ['commandes', 'id'], ['commandes_lignes', 'id'], ['rapports_corrections', 'programme_id,mois,produit_id'], ['journal', 'id'], ['profiles', 'id']
+  ['commandes', 'id'], ['commandes_lignes', 'id'], ['rapports_corrections', 'programme_id,mois,produit_id'],
+  ['agents_asc', 'id'], ['fiches_lignes', 'id'], ['fiches_mois', 'fiche,mois'], ['asc_mois', 'asc_id,mois'], ['journal', 'id'], ['profiles', 'id']
 ];
 
 // Appel de la fonction serveur « utilisateurs » (réservée au gérant)

@@ -287,6 +287,43 @@ details.patient summary { min-height: 48px; display: flex; align-items: center; 
 .ft input { width: 70px; min-height: 28px; border: 1px solid #8FA39B; border-radius: 4px; text-align: right; font-family: var(--mono); font-size: 12px; }
 .calc { color: var(--violet); }
 
+/* ---------- Fiches PNLP du district (ESPC, IDE, ASC) ---------- */
+.tbl.fiche th { white-space: normal; min-width: 76px; text-transform: none; letter-spacing: 0; line-height: 1.25; vertical-align: bottom; }
+.tbl.fiche th .lettre { display: block; margin-top: 4px; font-weight: 700; color: var(--texte); font-size: 11px; white-space: nowrap; }
+.tbl.fiche td.fixe { min-width: 260px; max-width: 340px; }
+.tbl.fiche td.fixe .badge { margin-top: 4px; }
+.tbl.fiche .col-gris { background: #EEF1F0; }
+.tbl.fiche thead .col-gris { background: #E4E9E7; }
+.tbl.fiche .col-msd { background: #E3F2E8; font-weight: 700; }
+.tbl.fiche thead .col-msd { background: #CDE8D6; color: #1A6438; }
+.tbl.fiche .col-fort { font-weight: 700; }
+.tbl.fiche .col-q { min-width: 110px; }
+.tbl.fiche td.vide { background: repeating-linear-gradient(-45deg, #FFFFFF, #FFFFFF 6px, #F3F5F4 6px, #F3F5F4 12px); }
+.tbl.fiche input.in { min-height: 36px; max-width: 96px; text-align: right; }
+.tbl.fiche input[data-com] { max-width: 200px; min-width: 140px; text-align: left; }
+.tbl.fiche tr.niv-urgent td.col-msd, .tbl.fiche tr.niv-urgent td.col-q { color: var(--rouge); background: var(--rouge-clair); }
+.tbl.fiche tr.niv-bas td.col-msd { color: var(--orange); background: var(--orange-clair); }
+.tbl.fiche td.neg { color: var(--rouge); }
+.grid-tdr { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+/* Impression : le formulaire papier, en A4 paysage */
+.fiche-doc { font-family: Arial, Helvetica, sans-serif; font-size: 11px; padding: 0; }
+.fd-tete { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 8px; }
+.fd-ident div, .fd-niveaux div { margin: 2px 0; }
+.fd-titre { text-align: center; }
+.fd-titre .t { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
+.fd-niveaux { text-align: right; }
+.fd-case { display: inline-block; min-width: 34px; padding: 1px 6px; border: 1px solid #222222; text-align: center; font-weight: 700; }
+.ft.fd { table-layout: fixed; }
+.ft.fd th, .ft.fd td { padding: 2px 3px; font-size: 8.5px; overflow-wrap: anywhere; hyphens: auto; }
+.ft.fd td.n { font-size: 9px; }
+.ft.fd tr.lettres th { font-size: 7.5px; font-weight: 600; }
+.ft.fd .col-gris { background: #D9D9D9; }
+.ft.fd .col-msd { background: #8CC63F; }
+.fd-pied { display: flex; justify-content: space-between; gap: 12px; margin-top: 8px; }
+.fd-commentaire { margin-top: 6px; border-bottom: 1px dotted #555555; min-height: 18px; }
+.fd-signatures { display: flex; justify-content: space-between; gap: 24px; margin-top: 10px; }
+.fd-signatures div { flex: 1; border: 1px solid #222222; min-height: 62px; padding: 4px 6px; text-align: center; }
+
 /* ---------- Bandeaux : hors ligne, ventes en attente, nouvelle version ---------- */
 .bandeau { padding: 10px 20px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center; font-weight: 600; text-align: center; }
 .bandeau-off { background: var(--orange-clair); color: var(--orange); }
@@ -307,6 +344,7 @@ details.patient summary { min-height: 48px; display: flex; align-items: center; 
   .no-print { display: none !important; }
   .ft input { border: 0; }
   .ft tr.cmd td { background: none; }
+  .ft.fd .col-gris, .ft.fd .col-msd { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 
 @media (max-width: 640px) {

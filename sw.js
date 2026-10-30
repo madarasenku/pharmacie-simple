@@ -9,8 +9,8 @@
    (tests/deploiement.test.js vérifie que les trois concordent).
    ============================================================ */
 
-const APP_VERSION = '1.10.0';
-const CACHE = 'pharmacie-simple-v12';
+const APP_VERSION = '1.11.0';
+const CACHE = 'pharmacie-simple-v13';
 const v = (url) => url + '?v=' + APP_VERSION;
 const famille = (nom) => nom.replace(/[\d.]+$/, '');
 
@@ -34,6 +34,7 @@ const PRECACHE = [
   './js/pages/journee.js',
   './js/pages/credits.js',
   './js/pages/programmes.js',
+  './js/pages/fiches.js',
   './js/pages/point.js',
   './js/pages/rapport.js',
   './js/pages/base.js',

@@ -1,5 +1,9 @@
-// Programmes : compte rendu mensuel par programme et bénéficiaires par tranche d'âge et sexe.
+// Programmes : compte rendu mensuel par programme et bénéficiaires par tranche d'âge et sexe ;
+// pour le PNLP, les fiches du district (ESPC, IDE, ASC) et les remises aux agents de santé communautaires.
 import { esc, fmt, fmtDateHeure, q, rpc, tout, isoMois, nomMois, imprimer, csv, telecharger, TRANCHES } from '../util.js';
+import { estPnlp, renderFiche, renderAsc } from './fiches.js';
+
+const VUES = [['compte', 'Compte rendu'], ['ESPC', 'Fiche ESPC'], ['IDE', 'Fiche IDE'], ['ASC', 'Fiche ASC'], ['agents', 'ASC : remises']];
 
 export async function render(el, ctx) {
   const { sb } = ctx;
@@ -10,9 +14,36 @@ export async function render(el, ctx) {
   }
   let progId = progs[0].id;
   let mois = isoMois();
+  let vue = 'compte';
+
+  const tete = (boutons) => `
+      <div class="page-head"><div><h1>Programmes</h1><div class="small muted">Compte rendu préparé automatiquement à partir des dotations reçues et des distributions.</div></div>
+        <div class="inline" style="align-items:flex-end">
+          <div><label class="lbl" for="mois">Mois</label><input class="in" type="month" id="mois" value="${mois}" max="${isoMois()}"></div>
+          ${boutons ? '<button class="btn" id="csv">Exporter Excel</button><button class="btn btn-v" id="imprimer">Imprimer le compte rendu</button>' : ''}
+        </div></div>
+      <div class="origines" role="group" aria-label="Programme">
+        ${progs.map((p) => `<button class="org ${p.id === progId ? 'on-v' : ''}" data-prog="${p.id}"><span style="font-weight:700">${esc(p.nom)}</span><span class="small" style="opacity:.85">${esc(p.sigle)} · rapport ${esc(p.frequence)}</span></button>`).join('')}
+      </div>
+      ${estPnlp(progs.find((p) => p.id === progId)) ? `<div class="inline" role="group" aria-label="Fiches du PNLP">
+        ${VUES.map(([k, l]) => `<button class="chip ${vue === k ? 'on-v' : ''}" data-vue="${k}">${l}</button>`).join('')}</div>` : ''}`;
+  const lierTete = () => {
+    el.querySelectorAll('[data-prog]').forEach((b) => b.onclick = () => { progId = Number(b.dataset.prog); dessiner(); });
+    el.querySelectorAll('[data-vue]').forEach((b) => b.onclick = () => { vue = b.dataset.vue; dessiner(); });
+    el.querySelector('#mois').onchange = (e) => { mois = e.target.value || isoMois(); dessiner(); };
+  };
 
   async function dessiner() {
     const prog = progs.find((p) => p.id === progId);
+    if (!estPnlp(prog)) vue = 'compte';
+    if (vue !== 'compte') {
+      el.innerHTML = tete(false) + '<div id="vue-fiche" class="stack"></div>';
+      lierTete();
+      const box = el.querySelector('#vue-fiche');
+      if (vue === 'agents') await renderAsc(box, ctx, { mois });
+      else await renderFiche(box, ctx, { fiche: vue, mois });
+      return;
+    }
     const debut = mois + '-01';
     const finMois = new Date(new Date(debut + 'T00:00:00').setMonth(new Date(debut + 'T00:00:00').getMonth() + 1));
     const [rapport, stats, recents, encaisse] = await Promise.all([
@@ -50,15 +81,7 @@ export async function render(el, ctx) {
         <tbody>${lignesTr.map((r) => `<tr><td>${esc(r.t)}</td><td class="num r n">${r.m}</td><td class="num r n">${r.f}</td><td class="num r n">${r.np}</td><td class="num r n" style="font-weight:700">${r.m + r.f + r.np}</td></tr>`).join('')}
         <tr><td style="font-weight:700">Total</td><td class="num r n">${tot.m}</td><td class="num r n">${tot.f}</td><td class="num r n">${tot.np}</td><td class="num r n" style="font-weight:700">${tot.m + tot.f + tot.np}</td></tr></tbody></table>`;
 
-    el.innerHTML = `
-      <div class="page-head"><div><h1>Programmes</h1><div class="small muted">Compte rendu préparé automatiquement à partir des dotations reçues et des distributions.</div></div>
-        <div class="inline" style="align-items:flex-end">
-          <div><label class="lbl" for="mois">Mois</label><input class="in" type="month" id="mois" value="${mois}" max="${isoMois()}"></div>
-          <button class="btn" id="csv">Exporter Excel</button><button class="btn btn-v" id="imprimer">Imprimer le compte rendu</button>
-        </div></div>
-      <div class="origines" role="group" aria-label="Programme">
-        ${progs.map((p) => `<button class="org ${p.id === progId ? 'on-v' : ''}" data-prog="${p.id}"><span style="font-weight:700">${esc(p.nom)}</span><span class="small" style="opacity:.85">${esc(p.sigle)} · rapport ${esc(p.frequence)}</span></button>`).join('')}
-      </div>
+    el.innerHTML = `${tete(true)}
       <section class="grid-kpi">
         <div class="card kpi"><div class="t">Reçu ce mois</div><div class="v">${fmt(recu)}</div><div class="s">unités</div></div>
         <div class="card kpi"><div class="t">${verbe} ce mois</div><div class="v" style="color:var(--violet)">${fmt(donne)}</div><div class="s">unités</div></div>
@@ -78,8 +101,7 @@ export async function render(el, ctx) {
             <td class="small">${esc(v.ventes_lignes.map((l) => l.produits?.designation + ' × ' + l.quantite).join(', '))}</td></tr>`).join('') || `<tr><td class="muted">${prog.recouvrable ? 'Aucune vente' : 'Aucune distribution'} ce mois.</td></tr>`}</tbody></table></div></section>
       </div>`;
 
-    el.querySelectorAll('[data-prog]').forEach((b) => b.onclick = () => { progId = Number(b.dataset.prog); dessiner(); });
-    el.querySelector('#mois').onchange = (e) => { mois = e.target.value || isoMois(); dessiner(); };
+    lierTete();
     el.querySelector('#imprimer').onclick = () => {
       const ph = ctx.pharmacie;
       imprimer(`<div class="doc">

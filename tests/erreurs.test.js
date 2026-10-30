@@ -92,7 +92,7 @@ lancerTest('ERREURS — une erreur affichée à un agent part dans le journal du
     for (let i = 0; i < 50 && !db.erreurs.length; i++) await page.waitForTimeout(50);
     const e = db.erreurs[0] || {};
     r.check('erreur enregistrée : page, message, qui', [e.page, e.message, e.user_id], ['comptoir', 'Stock insuffisant pour PARACETAMOL 500 MG CP (2 manquant(s)).', UTILISATEURS.vendeur.id]);
-    r.ok('avec la version de l’application et l’appareil', e.version === '1.10.0' && /Chrome/.test(e.appareil || ''), JSON.stringify(e));
+    r.ok('avec la version de l’application et l’appareil', e.version === '1.11.0' && /Chrome/.test(e.appareil || ''), JSON.stringify(e));
     // La même erreur répétée tout de suite n'est envoyée qu'une fois
     await page.click('#valider');
     await page.waitForTimeout(300);

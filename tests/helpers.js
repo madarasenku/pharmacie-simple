@@ -89,7 +89,7 @@ function donneesDeBase() {
       { cle: 'droits_responsable', valeur: { vendre: true, entree: true, credit: true, programmes: true, corriger: true, annuler: true, prix: false, rapports: true, base: false } },
       { cle: 'pharmacie', valeur: { nom: 'Pharmacie Test', region: 'SUD COMOÉ', district: 'GRAND-BASSAM', etablissement: 'CSR TEST' } },
       { cle: 'derniere_sauvegarde', valeur: { date: new Date().toISOString(), par: 'Gérante Test' } },
-      { cle: 'version_base', valeur: { version: 13 } }
+      { cle: 'version_base', valeur: { version: 14 } }
     ],
     programmes, produits, lots, produits_programmes: liens,
     clients: [{ id: 1, nom: 'TRAORE Adama', telephone: '0700000001', plafond: 10000 }],
@@ -105,6 +105,25 @@ function donneesDeBase() {
     v_dettes: [{ client_id: 1, nom: 'TRAORE Adama', telephone: '0700000001', plafond: 10000, du: 3700, premier_credit: ilYA(60 * 24 * 40) }],
     credits_paiements: [],
     ventes_lignes: [], commandes: [], commandes_lignes: [], rapports_corrections: [],
+    // Fiches PNLP du district : quelques lignes du formulaire (une reliée au PNLP, une à un produit REC, deux sans produit)
+    fiches_lignes: [
+      { id: 1, cle: 'ASAQ25', ordre: 1, designation: 'ARTESUNATE/AMODIAQUINE 25 / 67.5 mg ENFANT (2 - 11 MOIS) PLAQ/3 comp. BTE/25', unite: 'PLAQUETTE', sur_espc: true, sur_ide: true, sur_asc: true, produit_id: null, programme_id: null },
+      { id: 2, cle: 'ASAQ50', ordre: 2, designation: 'ARTESUNATE/AMODIAQUINE 50 / 135 mg ENFANT (1 - 5ANS) PLAQ/3 comp. BTE/25', unite: 'PLAQUETTE', sur_espc: true, sur_ide: true, sur_asc: true, produit_id: 2, programme_id: 2 },
+      { id: 3, cle: 'SROZINC', ordre: 16, designation: 'KIT DE SELS DE REHYDRATATION ORAL BP 20.5g sachet+ ZINC 20mg comp plq/10 KIT', unite: 'KIT', sur_espc: true, sur_ide: false, sur_asc: true, produit_id: 4, programme_id: 1 },
+      { id: 4, cle: 'GIEMSA', ordre: 18, designation: 'GIEMSA SOLUTION FL/500ML', unite: 'FLACON', sur_espc: true, sur_ide: true, sur_asc: false, produit_id: null, programme_id: null }
+    ],
+    // Chiffres que fiche_pnlp renvoie (calculés par la vraie base, testés dans tests/sql/scenario.sql)
+    fiche_chiffres: {
+      ESPC: {
+        ASAQ50: { a: 10, b: 0, asc: 2, c: 8, d: 0, e: 2, f: 3, m2: 7, m1: 9, cmm: 8, msd: 0.3, niveau: 'urgent', qcalc: 14 },
+        SROZINC: { a: 40, b: 0, asc: 0, c: 6, d: -2, e: 32, f: 0, m2: 6, m1: 6, cmm: 6, msd: 5.3, niveau: 'sur', qcalc: 0 }
+      },
+      IDE: { ASAQ50: { a: 10, b: 0, asc: 2, c: 6, d: 0, e: 2, f: 3, m2: 5, m1: 7, cmm: 6, msd: 0.3, niveau: 'urgent', qcalc: 4 } },
+      ASC: { ASAQ50: { a: 5, b: 2, c: 3, d: 0, e: 4, f: 0, m2: 2, m1: 4, cmm: 3, msd: 1.3, niveau: 'ok', qcalc: 1 } },
+      'ASC:1': { ASAQ50: { a: 5, b: 2, c: 3, d: 0, e: 4, f: 0, m2: 2, m1: 4, cmm: 3, msd: 1.3, niveau: 'ok', qcalc: 1 } }
+    },
+    fiches_mois: [], asc_mois: [],
+    agents_asc: [{ id: 1, nom: 'AYA KOUASSI', localite: 'Ahouakro', telephone: '0701020304', actif: true }, { id: 2, nom: 'BAMBA ALI', localite: null, telephone: null, actif: false }],
     // Journal des erreurs (lecture gérant ; « profiles » = la jointure profiles!erreurs_user_id_fkey(nom))
     erreurs: [],
     journal: [{ id: 1, user_id: UTILISATEURS.gerant.id, action: 'correction', details: { lot: 1, motif: 'Casse' }, created_at: ilYA(30), profiles: { nom: 'Gérante Test' } }]
@@ -290,7 +309,85 @@ function rpcParDefaut(db, etat) {
       cibles.forEach((x) => { x.vu = true; x.vu_par = etat.utilisateur.id; });
       return cibles.length;
     },
-    valider_inventaire: (a) => ({ corrections: a.p.comptes.filter((c) => c.reel !== c.attendu).length, lots_ajoutes: a.p.nouveaux.filter((n) => n.quantite > 0).length })
+    valider_inventaire: (a) => ({ corrections: a.p.comptes.filter((c) => c.reel !== c.attendu).length, lots_ajoutes: a.p.nouveaux.filter((n) => n.quantite > 0).length }),
+    // ── Fiches PNLP (même forme que fiche_pnlp côté serveur ; les chiffres viennent de db.fiche_chiffres) ──
+    fiche_pnlp: (a) => {
+      const fiche = a.p_fiche, mois = a.p_mois.slice(0, 7) + '-01', asc = a.p_asc ?? null;
+      const fm = asc ? null : db.fiches_mois.find((x) => x.fiche === fiche && x.mois === mois);
+      const am = asc ? db.asc_mois.find((x) => x.asc_id === asc && x.mois === mois) : null;
+      const chiffres = db.fiche_chiffres[fiche + (asc ? ':' + asc : '')] || {};
+      const lignes = db.fiches_lignes.filter((l) => l['sur_' + fiche.toLowerCase()]).sort((x, y) => x.ordre - y.ordre).map((l) => {
+        const p = db.produits.find((x) => x.id === l.produit_id), g = db.programmes.find((x) => x.id === l.programme_id);
+        const c = { a: 0, b: 0, asc: fiche === 'ASC' ? null : 0, c: 0, d: 0, e: 0, f: 0, m2: 0, m1: 0, cmm: 0, msd: null, niveau: null, qcalc: fiche === 'IDE' && !l.sur_asc ? null : 0, si: null, ...(chiffres[l.cle] || {}) };
+        const corr = fm?.lignes?.['l' + l.id] || {};
+        const sa = am?.lignes?.['l' + l.id] || {};
+        return { k: 'l' + l.id, ligne_id: l.id, designation: l.designation, unite: l.unite, code: p?.code ?? null, produit_id: l.produit_id, programme_id: l.programme_id,
+          produit: p?.designation ?? null, origine: g?.sigle ?? null, ...c, ...(asc ? { si: sa.si ?? c.si, c: sa.c ?? c.c, d: sa.d ?? c.d, f: sa.f ?? c.f } : {}),
+          q: p && c.qcalc !== null ? (corr.q ?? c.qcalc) : null, corrigee: !!p && corr.q != null, commentaire: corr.com || '' };
+      });
+      const ag = asc ? db.agents_asc.find((x) => x.id === asc) : null;
+      return { fiche, mois, en_cours: mois.slice(0, 7) === isoJour(new Date()).slice(0, 7), niveaux: { max: fiche === 'ASC' ? 1.5 : 2, min: 1, urgence: 0.5 },
+        urgent: lignes.some((l) => l.niveau === 'urgent'), nombre_asc: fiche === 'ASC' ? db.agents_asc.filter((x) => x.actif).length : null,
+        asc: ag ? { id: ag.id, nom: ag.nom, localite: ag.localite, actif: ag.actif } : null,
+        entete: asc ? { tdr_realises: am?.tdr_realises ?? null, tdr_positifs: am?.tdr_positifs ?? null, maj_le: am?.maj_le ?? null, maj_par: null }
+          : { tdr_realises: fm?.tdr_realises ?? null, tdr_positifs: fm?.tdr_positifs ?? null, ge_realisees: fm?.ge_realisees ?? null, ge_positives: fm?.ge_positives ?? null,
+            commentaire: fm?.commentaire || '', maj_le: fm?.maj_le ?? null, maj_par: fm ? etat.utilisateur?.nom : null },
+        lignes };
+    },
+    enregistrer_fiche: (a) => {
+      const p = a.p, mois = p.mois.slice(0, 7) + '-01', n = (v) => (v === '' || v === null || v === undefined ? null : Number(v));
+      db.fiches_mois = db.fiches_mois.filter((x) => !(x.fiche === p.fiche && x.mois === mois));
+      db.fiches_mois.push({ fiche: p.fiche, mois, tdr_realises: n(p.tdr_realises), tdr_positifs: n(p.tdr_positifs), ge_realisees: n(p.ge_realisees), ge_positives: n(p.ge_positives),
+        commentaire: p.commentaire || '', lignes: p.lignes || {}, maj_le: new Date().toISOString() });
+      return null;
+    },
+    saisir_asc: (a) => {
+      const p = a.p, mois = p.mois.slice(0, 7) + '-01', n = (v) => (v === '' || v === null || v === undefined ? null : Number(v));
+      const lignes = {};
+      for (const [k, v] of Object.entries(p.lignes || {})) lignes[k] = { si: n(v.si), c: n(v.c) ?? 0, d: n(v.d) ?? 0, f: n(v.f) ?? 0 };
+      db.asc_mois = db.asc_mois.filter((x) => !(x.asc_id === p.asc_id && x.mois === mois));
+      db.asc_mois.push({ asc_id: p.asc_id, mois, tdr_realises: n(p.tdr_realises), tdr_positifs: n(p.tdr_positifs), lignes, maj_le: new Date().toISOString() });
+      return null;
+    },
+    enregistrer_asc: (a) => {
+      const p = a.p, ligne = { nom: String(p.nom).trim().toUpperCase(), localite: p.localite?.trim() || null, telephone: p.telephone?.trim() || null, actif: p.actif !== false };
+      if (p.id) { Object.assign(db.agents_asc.find((x) => x.id === p.id), ligne); return p.id; }
+      const id = Math.max(0, ...db.agents_asc.map((x) => x.id)) + 1;
+      db.agents_asc.push({ id, ...ligne });
+      return id;
+    },
+    remettre_asc: (a) => {
+      let unites = 0;
+      for (const l of a.p.lignes) {
+        let reste = l.quantite;
+        for (const lot of db.lots.filter((x) => x.produit_id === l.produit_id && x.programme_id === l.programme_id && x.quantite > 0).sort((x, y) => String(x.peremption || '9').localeCompare(String(y.peremption || '9')))) {
+          const pris = Math.min(reste, lot.quantite);
+          lot.quantite -= pris; reste -= pris;
+          db.mouvements.push({ id: db.mouvements.length + 100, produit_id: l.produit_id, programme_id: l.programme_id, lot_id: lot.id, type: 'distribution', quantite: -pris, asc_id: a.p.asc_id, created_at: new Date().toISOString() });
+          if (!reste) break;
+        }
+        if (reste) throw new Error('Stock insuffisant (' + reste + ' manquant(s)).');
+        unites += l.quantite;
+      }
+      return { unites, lignes: a.p.lignes.length };
+    },
+    lier_ligne_fiche: (a) => {
+      if (etat.utilisateur?.role !== 'gerant') throw new Error('Action non autorisée (base).');
+      Object.assign(db.fiches_lignes.find((x) => x.id === a.p_ligne), { produit_id: a.p_produit, programme_id: a.p_programme });
+      return null;
+    },
+    creer_produits_fiche: () => {
+      if (etat.utilisateur?.role !== 'gerant') throw new Error('Action non autorisée (base).');
+      let n = 0;
+      for (const l of db.fiches_lignes.filter((x) => !x.produit_id)) {
+        const id = Math.max(...db.produits.map((x) => x.id)) + 1;
+        db.produits.push({ id, designation: l.designation, presentation: l.unite.charAt(0) + l.unite.slice(1).toLowerCase(), code_barres: null, prix_achat: 0, prix_vente: 0, stock_min: 0, actif: true });
+        db.produits_programmes.push({ produit_id: id, programme_id: 2, prix_vente: null });
+        Object.assign(l, { produit_id: id, programme_id: 2 });
+        n++;
+      }
+      return n;
+    }
   };
 }
 
@@ -347,7 +444,7 @@ function trier(lignes, order) {
     return 0;
   });
 }
-const CLES = { parametres: ['cle'], produits_programmes: ['produit_id', 'programme_id'], rapports_corrections: ['programme_id', 'mois', 'produit_id'] };
+const CLES = { parametres: ['cle'], produits_programmes: ['produit_id', 'programme_id'], rapports_corrections: ['programme_id', 'mois', 'produit_id'], fiches_mois: ['fiche', 'mois'], asc_mois: ['asc_id', 'mois'] };
 
 function fauxJwt(u) {
   const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
